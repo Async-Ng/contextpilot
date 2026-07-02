@@ -1,0 +1,63 @@
+﻿{
+  "name": "contextpilot",
+  "version": "0.3.0",
+  "description": "Local-first control plane that pilots AI coding agents with project context, memory, orchestration, gates, and SRS knowledge.",
+  "main": "dist/index.js",
+  "bin": {
+    "contextpilot": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "npm run build && node --test tests/*.test.js",
+    "pack:dry-run": "npm pack --dry-run",
+    "smoke:pack": "npm run build && npm pack --silent && node tests/smoke-pack.js",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "contextpilot",
+    "coding-agent",
+    "orchestration",
+    "cursor",
+    "claude",
+    "codex",
+    "context",
+    "memory",
+    "srs"
+  ],
+  "author": "Nghia Hutt",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@clack/prompts": "^0.10.1",
+    "chalk": "^4.1.2",
+    "chokidar": "^4.0.3",
+    "commander": "^13.1.0",
+    "fast-glob": "^3.3.3",
+    "fs-extra": "^11.3.0",
+    "gray-matter": "^4.0.3",
+    "nanoid": "^3.3.11",
+    "proper-lockfile": "^4.1.2",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^22.13.10",
+    "@types/proper-lockfile": "^4.1.4",
+    "typescript": "^5.8.2"
+  },
+  "files": [
+    "dist",
+    "assets",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ]
+}
