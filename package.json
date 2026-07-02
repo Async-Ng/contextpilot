@@ -29,6 +29,14 @@
   ],
   "author": "Nghia Hutt",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Async-Ng/contextpilot.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Async-Ng/contextpilot/issues"
+  },
+  "homepage": "https://github.com/Async-Ng/contextpilot#readme",
   "engines": {
     "node": ">=18"
   },
