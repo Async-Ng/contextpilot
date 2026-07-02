@@ -15,7 +15,7 @@
 ### Changed
 
 - Public identity renamed to `ContextPilot`.
-- Package and CLI binary are both `contextpilot`.
+- Package is now `@async-nguyen/contextpilot`; CLI binary remains `contextpilot`.
 - Project storage moved to `.contextpilot/`, with setup migration from legacy `.harness/`.
 - README quick start now uses the `contextpilot` npm package name.
 

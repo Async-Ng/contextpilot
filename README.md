@@ -1,4 +1,4 @@
-# ContextPilot
+﻿# ContextPilot
 
 ContextPilot (`contextpilot`) is a local control plane that lets humans chat normally with AI coding agents while the agents run the ContextPilot protocol themselves. It manages **context + memory + orchestration** for Claude Code, Cursor, Codex, Windsurf, and GitHub Copilot from a single source of truth in `.contextpilot/`.
 
@@ -20,7 +20,7 @@ v0.3 adds a local **orchestration control plane** (`.contextpilot/orchestration/
 Humans only need one setup command per project:
 
 ```bash
-npm install -g contextpilot
+npm install -g @async-nguyen/contextpilot
 cd your-project
 contextpilot setup
 ```
@@ -32,7 +32,7 @@ After that, chat with your AI agent normally. The generated agent instructions a
 For headless or CI-friendly bootstrap, `setup` wraps the zero-touch pipeline:
 
 ```bash
-npm install -g contextpilot
+npm install -g @async-nguyen/contextpilot
 cd your-project
 contextpilot setup --json --no-input
 ```
@@ -195,7 +195,7 @@ The user should not need to know these commands during normal use.
 ## Quick start
 
 ```bash
-npm install -g contextpilot
+npm install -g @async-nguyen/contextpilot
 cd your-project
 contextpilot setup
 ```
