@@ -31,9 +31,10 @@ function runJson(cwd, args) {
 
 test("package metadata is public and binary is contextpilot", () => {
   const pkg = require(path.join(ROOT, "package.json"));
+  const lock = require(path.join(ROOT, "package-lock.json"));
 
   assert.equal(pkg.name, "@async-nguyen/contextpilot");
-  assert.equal(pkg.version, "0.3.0");
+  assert.equal(pkg.version, lock.version);
   assert.equal(pkg.bin["contextpilot"], "dist/index.js");
   assert.equal(pkg.publishConfig.access, "public");
   assert.ok(pkg.engines.node);
