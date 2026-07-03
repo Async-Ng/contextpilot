@@ -182,8 +182,8 @@ The user should not need to know these commands during normal use.
 | `gate check` | Yes | No | Hook adapter (stdin) |
 | `gate precommit` | Yes | No | Git pre-commit backstop |
 | `gate install` | Yes | Yes | Install hooks + git backstop |
+| `srs install` | Yes | Yes | Install bundled fullstack-to-srs skill for all configured agents |
 | `srs ingest` | Yes | Yes | Ingest `docs/srs/` into knowledge |
-| `srs install` | **Human** | Yes | Install bundled fullstack-to-srs skill |
 | `discover` | **Human** | Yes | Import existing rules/skills |
 | `add` | **Human** | Yes | Import a file/dir as rules |
 | `resolve` | Yes | Yes | Archive a learning |
@@ -270,7 +270,8 @@ contextpilot discover --dry-run --json --no-input
 ### SRS ingest
 
 ```bash
-contextpilot srs install    # human-gated
+contextpilot srs install
+# Ask your AI agent to generate the SRS into docs/srs/
 contextpilot srs ingest --path docs/srs --reingest --json
 ```
 
@@ -291,11 +292,11 @@ Every generated agent file includes a **ContextPilot Protocol** section instruct
 3. **Open a discussion** before changing business logic when uncertain (`decision open` -> chat -> `decision resolve`)
 6. Run `contextpilot refresh --auto` when new external rules appear.
 7. Run `contextpilot checkpoint` (or `sync`) at logical checkpoints.
-8. Never ask the user to run CLI commands except human-gated commands (`forget`, `discover`, `add`, `srs install`).
+8. Never ask the user to run CLI commands except human-gated commands (`forget`, `discover`, `add`).
 
 ## SRS integration
 
-- **`srs install`**: Copies bundled `fullstack-to-srs` skill to `.claude/skills/fullstack-to-srs` (Claude Code optimized; Cursor/Codex use single-agent fallback).
+- **`srs install`**: Copies bundled `fullstack-to-srs` skill to `.contextpilot/skills/fullstack-to-srs` for all configured agents. When Claude is enabled, it also writes a Claude-native compatibility copy to `.claude/skills/fullstack-to-srs`.
 - **`srs ingest`**: Reads `docs/srs/NN-*.md`, creates scoped knowledge rules, seeds learnings from appendix QA items.
 
 Bundled skill source: `assets/skills/fullstack-to-srs/`.

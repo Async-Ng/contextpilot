@@ -43,6 +43,13 @@ function normalizeStoragePath(value: unknown): unknown {
   return value.replace(/^\.harness(?=\/|\\|$)/, ".contextpilot");
 }
 
+function normalizeSrsSkillPath(value: unknown): unknown {
+  if (value === ".claude/skills/fullstack-to-srs") {
+    return ".contextpilot/skills/fullstack-to-srs";
+  }
+  return normalizeStoragePath(value);
+}
+
 function normalizeStoragePaths(config: Record<string, unknown>): Record<string, unknown> {
   const next = { ...config };
   for (const key of ["rulesDir", "contextFile", "memoryFile", "archiveFile", "stateFile"]) {
@@ -62,6 +69,11 @@ function normalizeStoragePaths(config: Record<string, unknown>): Record<string, 
     orchestration.runsFile = normalizeStoragePath(orchestration.runsFile);
     orchestration.eventsFile = normalizeStoragePath(orchestration.eventsFile);
     next.orchestration = orchestration;
+  }
+  if (typeof next.srs === "object" && next.srs !== null && !Array.isArray(next.srs)) {
+    const srs = { ...(next.srs as Record<string, unknown>) };
+    srs.skillPath = normalizeSrsSkillPath(srs.skillPath);
+    next.srs = srs;
   }
   return next;
 }

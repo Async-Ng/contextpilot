@@ -133,7 +133,7 @@ export function defaultConfig(agents: AgentName[] = ["claude", "cursor", "codex"
     },
     srs: {
       path: "docs/srs",
-      skillPath: ".claude/skills/fullstack-to-srs",
+      skillPath: ".contextpilot/skills/fullstack-to-srs",
       moduleMap: {},
     },
     gate: defaultGateConfig(),

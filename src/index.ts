@@ -315,7 +315,7 @@ const srs = program.command("srs").description("SRS integration");
 
 srs
   .command("install")
-  .description("Install bundled fullstack-to-srs skill (human-gated)")
+  .description("Install bundled fullstack-to-srs skill for all configured agents")
   .action(async () => {
     await runSrsInstall();
   });

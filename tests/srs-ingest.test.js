@@ -30,6 +30,13 @@ function runJson(cwd, args) {
   };
 }
 
+function runRaw(cwd, args) {
+  return spawnSync("node", [CLI, ...args], {
+    cwd,
+    encoding: "utf8",
+  });
+}
+
 function writeFile(cwd, relPath, content) {
   const fullPath = path.join(cwd, relPath);
   fs.mkdirSync(path.dirname(fullPath), { recursive: true });
@@ -87,6 +94,80 @@ test("srs ingest reads nested module files and ignores section README indexes", 
       fs.existsSync(path.join(cwd, ".contextpilot", "rules", "srs-03-section-3-index.md")),
       false,
     );
+  });
+});
+
+test("srs install creates shared skill and Claude compatibility copy", () => {
+  withTempProject((cwd) => {
+    runJson(cwd, ["setup", "--no-git", "--agent", "claude"]);
+
+    const result = runJson(cwd, ["srs", "install"]);
+
+    assert.equal(result.code, 0);
+    assert.equal(result.json.status, "installed");
+    assert.ok(fs.existsSync(path.join(cwd, ".contextpilot", "skills", "fullstack-to-srs", "SKILL.md")));
+    assert.ok(fs.existsSync(path.join(cwd, ".claude", "skills", "fullstack-to-srs", "SKILL.md")));
+    assert.match(fs.readFileSync(path.join(cwd, "CLAUDE.md"), "utf8"), /\.contextpilot\/skills\/fullstack-to-srs\/SKILL\.md/);
+  });
+});
+
+test("srs install supports non-Claude agents through shared skill path", () => {
+  withTempProject((cwd) => {
+    runJson(cwd, ["setup", "--no-git", "--agent", "codex"]);
+
+    const result = runJson(cwd, ["--no-input", "srs", "install"]);
+
+    assert.equal(result.code, 0);
+    assert.equal(result.json.status, "installed");
+    assert.ok(fs.existsSync(path.join(cwd, ".contextpilot", "skills", "fullstack-to-srs", "SKILL.md")));
+    assert.equal(fs.existsSync(path.join(cwd, ".claude", "skills", "fullstack-to-srs", "SKILL.md")), false);
+    assert.match(fs.readFileSync(path.join(cwd, "AGENTS.md"), "utf8"), /\.contextpilot\/skills\/fullstack-to-srs\/SKILL\.md/);
+  });
+});
+
+test("srs install migrates legacy Claude skillPath to shared skillPath", () => {
+  withTempProject((cwd) => {
+    runJson(cwd, ["setup", "--no-git", "--agent", "codex"]);
+    const configPath = path.join(cwd, ".contextpilot", "harness.config.json");
+    const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    config.srs.skillPath = ".claude/skills/fullstack-to-srs";
+    fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+
+    const result = runJson(cwd, ["srs", "install"]);
+    const updated = JSON.parse(fs.readFileSync(configPath, "utf8"));
+
+    assert.equal(result.code, 0);
+    assert.equal(updated.srs.skillPath, ".contextpilot/skills/fullstack-to-srs");
+    assert.ok(fs.existsSync(path.join(cwd, ".contextpilot", "skills", "fullstack-to-srs", "SKILL.md")));
+  });
+});
+
+test("srs install is idempotent and does not overwrite existing valid skill", () => {
+  withTempProject((cwd) => {
+    runJson(cwd, ["setup", "--no-git", "--agent", "codex"]);
+    runJson(cwd, ["srs", "install"]);
+    const skillPath = path.join(cwd, ".contextpilot", "skills", "fullstack-to-srs", "SKILL.md");
+    fs.appendFileSync(skillPath, "\ncustom local note\n", "utf8");
+
+    const result = runJson(cwd, ["srs", "install"]);
+
+    assert.equal(result.code, 0);
+    assert.equal(result.json.status, "already_installed");
+    assert.match(fs.readFileSync(skillPath, "utf8"), /custom local note/);
+  });
+});
+
+test("srs install rejects existing invalid skill destination", () => {
+  withTempProject((cwd) => {
+    runJson(cwd, ["setup", "--no-git", "--agent", "codex"]);
+    fs.mkdirSync(path.join(cwd, ".contextpilot", "skills", "fullstack-to-srs"), { recursive: true });
+
+    const result = runRaw(cwd, ["--json", "srs", "install"]);
+    const parsed = JSON.parse(result.stderr || result.stdout);
+
+    assert.notEqual(result.status, 0);
+    assert.equal(parsed.error, "srs_skill_install_failed");
+    assert.match(parsed.message, /Existing skill destination/);
   });
 });
 
