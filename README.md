@@ -163,6 +163,9 @@ The user should not need to know these commands during normal use.
 | `doctor` | Human / CI | No | Check local harness installation and project setup |
 | `status` | Yes | No | Drift / external / pending / **inDiscussion** |
 | `list` | Yes | No | List rules and learnings |
+| `knowledge query` | Yes | No | Find knowledge by text, file, scope, or target |
+| `knowledge relevant` | Yes | No | Find knowledge relevant to file path(s) |
+| `knowledge show` | Yes | No | Show one knowledge item by id |
 | `learn` | Yes | Append | Record one learning (no sync) |
 | `focus` | Yes | Yes | Update current focus (no sync) |
 | `sync` | Yes | Yes | Regenerate agent targets |
@@ -275,6 +278,14 @@ contextpilot srs install
 contextpilot srs ingest --path docs/srs --reingest --json
 ```
 
+### Knowledge retrieval
+
+```bash
+contextpilot knowledge relevant --file src/auth/login.ts --json
+contextpilot knowledge query --query "auth password policy" --target codex --json
+contextpilot knowledge show srs-03-auth --json
+```
+
 ### Refresh auto-adopt
 
 ```bash
@@ -289,10 +300,11 @@ Every generated agent file includes a **ContextPilot Protocol** section instruct
 2. Run `contextpilot context --inject` (or `status --json`) at session start.
 3. Start or follow **Active Orchestration** and advance it with `orchestrate advance`.
 4. Run `contextpilot learn` when mistakes/constraints are found.
-3. **Open a discussion** before changing business logic when uncertain (`decision open` -> chat -> `decision resolve`)
-6. Run `contextpilot refresh --auto` when new external rules appear.
-7. Run `contextpilot checkpoint` (or `sync`) at logical checkpoints.
-8. Never ask the user to run CLI commands except human-gated commands (`forget`, `discover`, `add`).
+5. **Open a discussion** before changing business logic when uncertain (`decision open` -> chat -> `decision resolve`)
+6. Run `contextpilot knowledge relevant --file "<path>" --json` or `contextpilot knowledge query --query "<topic>" --json` before relying on SRS/knowledge, then read the returned source files.
+7. Run `contextpilot refresh --auto` when new external rules appear.
+8. Run `contextpilot checkpoint` (or `sync`) at logical checkpoints.
+9. Never ask the user to run CLI commands except human-gated commands (`forget`, `discover`, `add`).
 
 ## SRS integration
 

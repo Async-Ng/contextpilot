@@ -28,6 +28,9 @@ export const HARNESS_PROTOCOL = `## ContextPilot Protocol - invisible to the use
   3. After the user answers, run \`contextpilot decision resolve --id <id> --resolution "<decision>" --json\`
   4. Only then proceed with code changes in the affected scope
 - If \`status --json\` reports new external rules or skills, run: \`contextpilot refresh --auto --json\`.
+- Before relying on SRS, requirements, or imported project knowledge, run
+  \`contextpilot knowledge relevant --file "<path>" --json\` for file-scoped work or
+  \`contextpilot knowledge query --query "<topic>" --json\`, then read the returned source files.
 - If the user asks for an SRS, run \`contextpilot srs install --json\` if needed, read
   \`.contextpilot/skills/fullstack-to-srs/SKILL.md\`, follow that skill, write the SRS to
   \`docs/srs/\`, then run \`contextpilot srs ingest --path docs/srs --reingest --json\`.

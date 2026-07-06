@@ -19,6 +19,11 @@ import {
   runGatePrecommit,
 } from "./commands/gate";
 import { runInit } from "./commands/init";
+import {
+  runKnowledgeQuery,
+  runKnowledgeRelevant,
+  runKnowledgeShow,
+} from "./commands/knowledge";
 import { runLearn } from "./commands/learn";
 import { runList } from "./commands/list";
 import {
@@ -124,6 +129,41 @@ program
   .option("--learnings", "List learnings only")
   .action((opts: { rules?: boolean; learnings?: boolean }) => {
     runList(opts);
+  });
+
+const knowledge = program
+  .command("knowledge")
+  .description("Find and show project knowledge");
+
+knowledge
+  .command("query")
+  .description("Find knowledge by query text, file, or scope")
+  .requiredOption("--query <text>", "Text to match against knowledge title, id, tags, and body")
+  .option("--file <path...>", "Relevant file path(s)")
+  .option("--scope <glob>", "Relevant scope glob(s), comma-separated")
+  .option("--target <agent>", "Filter by agent target")
+  .option("--limit <n>", "Maximum results", "10")
+  .option("--include-body", "Include full body in JSON output", false)
+  .action((opts) => {
+    runKnowledgeQuery(opts);
+  });
+
+knowledge
+  .command("relevant")
+  .description("Find knowledge relevant to file path(s)")
+  .requiredOption("--file <path...>", "Relevant file path(s)")
+  .option("--target <agent>", "Filter by agent target")
+  .option("--limit <n>", "Maximum results", "10")
+  .action((opts) => {
+    runKnowledgeRelevant(opts);
+  });
+
+knowledge
+  .command("show")
+  .description("Show one knowledge item by id")
+  .argument("<id>", "Knowledge item id")
+  .action((id: string) => {
+    runKnowledgeShow(id);
   });
 
 program
