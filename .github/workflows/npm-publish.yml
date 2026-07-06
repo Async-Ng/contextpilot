@@ -23,4 +23,5 @@ jobs:
 
       - run: npm ci
       - run: npm test
-      - run: npm publish --access public
+      - run: npm install -g npm@latest
+      - run: npm publish --access public --provenance
