@@ -217,7 +217,7 @@ export async function runDecisionResolve(
 
   await runSync(harnessDir);
 
-  out(`Decision resolved: ${id} → rule ${ruleId}`, {
+  out(`Decision resolved: ${id} -> rule ${ruleId}`, {
     status: "resolved",
     id: resolved.id,
     ruleId,

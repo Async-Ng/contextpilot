@@ -297,7 +297,8 @@ Every generated agent file includes a **ContextPilot Protocol** section instruct
 ## SRS integration
 
 - **`srs install`**: Copies bundled `fullstack-to-srs` skill to `.contextpilot/skills/fullstack-to-srs` for all configured agents. When Claude is enabled, it also writes a Claude-native compatibility copy to `.claude/skills/fullstack-to-srs`.
-- **`srs ingest`**: Reads `docs/srs/NN-*.md`, creates scoped knowledge rules, seeds learnings from appendix QA items.
+- **`srs ingest`**: Reads `docs/srs/NN-*.md`, creates scoped knowledge rules, seeds learnings from appendix QA items, then syncs agent targets.
+- **Knowledge rendering**: Claude/Codex-style single-file targets use `agentContext.knowledgeMode: "manifest"` by default, so generated files point to `.contextpilot/context/knowledge-index.md` instead of inlining large SRS bodies. Set `agentContext.knowledgeMode` to `"inline"` in `harness.config.json` to restore the old behavior.
 
 Bundled skill source: `assets/skills/fullstack-to-srs/`.
 

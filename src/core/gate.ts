@@ -210,7 +210,7 @@ function evaluateCommand(harnessDir: string): GateResult {
 }
 
 /**
- * Gate evaluation per spec Â§7.1.
+ * Gate evaluation per spec section 7.1.
  * File-based scope checks run when `input.file` is set; command-only input blocks on open discussions.
  */
 export function evaluate(harnessDir: string, input: GateInput): GateResult {

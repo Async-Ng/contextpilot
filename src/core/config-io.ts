@@ -1,11 +1,14 @@
 ﻿import * as fs from "node:fs";
 import * as path from "node:path";
 import {
+  agentContextConfigSchema,
+  defaultAgentContextConfig,
   defaultConfig,
   defaultGateConfig,
   defaultOrchestrationConfig,
   gateConfigSchema,
   harnessConfigSchema,
+  type AgentContextConfig,
   type GateConfig,
   type HarnessConfig,
   orchestrationConfigSchema,
@@ -36,6 +39,17 @@ function mergeOrchestrationConfig(raw: unknown): OrchestrationConfig {
   });
 }
 
+function mergeAgentContextConfig(raw: unknown): AgentContextConfig {
+  if (raw === undefined || raw === null) {
+    return defaultAgentContextConfig();
+  }
+  const partial = agentContextConfigSchema.partial().parse(raw);
+  return agentContextConfigSchema.parse({
+    ...defaultAgentContextConfig(),
+    ...partial,
+  });
+}
+
 function normalizeStoragePath(value: unknown): unknown {
   if (typeof value !== "string") {
     return value;
@@ -54,6 +68,15 @@ function normalizeStoragePaths(config: Record<string, unknown>): Record<string, 
   const next = { ...config };
   for (const key of ["rulesDir", "contextFile", "memoryFile", "archiveFile", "stateFile"]) {
     next[key] = normalizeStoragePath(next[key]);
+  }
+  if (
+    typeof next.agentContext === "object" &&
+    next.agentContext !== null &&
+    !Array.isArray(next.agentContext)
+  ) {
+    const agentContext = { ...(next.agentContext as Record<string, unknown>) };
+    agentContext.knowledgeIndexFile = normalizeStoragePath(agentContext.knowledgeIndexFile);
+    next.agentContext = agentContext;
   }
   if (typeof next.gate === "object" && next.gate !== null && !Array.isArray(next.gate)) {
     const gate = { ...(next.gate as Record<string, unknown>) };
@@ -87,6 +110,7 @@ function normalizeConfig(raw: unknown): HarnessConfig {
   const merged: Record<string, unknown> = {
     ...defaults,
     ...record,
+    agentContext: mergeAgentContextConfig(record.agentContext),
     gate: mergeGateConfig(record.gate),
     orchestration: mergeOrchestrationConfig(record.orchestration),
   };

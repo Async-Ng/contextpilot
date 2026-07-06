@@ -23,6 +23,15 @@ const srsConfigSchema = z.object({
   moduleMap: z.record(z.array(z.string())).default({}),
 });
 
+export const knowledgeModeSchema = z.enum(["manifest", "inline"]);
+
+export const agentContextConfigSchema = z.object({
+  knowledgeMode: knowledgeModeSchema,
+  knowledgeIndexFile: z.string(),
+  knowledgeExcerptChars: z.number().int().positive(),
+  maxMainFileChars: z.number().int().positive(),
+});
+
 export const gateModeSchema = z.enum(["sensitive-only", "strict"]);
 export const confirmModeSchema = z.enum(["chat", "terminal", "high-severity-terminal"]);
 
@@ -68,18 +77,21 @@ export const harnessConfigSchema = z.object({
   scan: scanConfigSchema,
   discover: discoverConfigSchema,
   srs: srsConfigSchema,
+  agentContext: agentContextConfigSchema,
   gate: gateConfigSchema,
   orchestration: orchestrationConfigSchema,
 });
 
 export type HarnessConfig = z.infer<typeof harnessConfigSchema>;
 export type AgentName = z.infer<typeof agentSchema>;
+export type AgentContextConfig = z.infer<typeof agentContextConfigSchema>;
+export type KnowledgeMode = z.infer<typeof knowledgeModeSchema>;
 export type GateConfig = z.infer<typeof gateConfigSchema>;
 export type GateMode = z.infer<typeof gateModeSchema>;
 export type ConfirmMode = z.infer<typeof confirmModeSchema>;
 export type OrchestrationConfig = z.infer<typeof orchestrationConfigSchema>;
 
-/** Gate defaults — public contract for v0.2 consumers (S1/S2/S3). */
+/** Gate defaults - public contract for v0.2 consumers (S1/S2/S3). */
 export function defaultGateConfig(): GateConfig {
   return {
     enabled: true,
@@ -101,6 +113,15 @@ export function defaultOrchestrationConfig(): OrchestrationConfig {
     requireReviewBeforeComplete: true,
     runsFile: ".contextpilot/orchestration/runs.jsonl",
     eventsFile: ".contextpilot/orchestration/events.jsonl",
+  };
+}
+
+export function defaultAgentContextConfig(): AgentContextConfig {
+  return {
+    knowledgeMode: "manifest",
+    knowledgeIndexFile: ".contextpilot/context/knowledge-index.md",
+    knowledgeExcerptChars: 240,
+    maxMainFileChars: 120000,
   };
 }
 
@@ -136,6 +157,7 @@ export function defaultConfig(agents: AgentName[] = ["claude", "cursor", "codex"
       skillPath: ".contextpilot/skills/fullstack-to-srs",
       moduleMap: {},
     },
+    agentContext: defaultAgentContextConfig(),
     gate: defaultGateConfig(),
     orchestration: defaultOrchestrationConfig(),
   };

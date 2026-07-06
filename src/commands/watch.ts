@@ -97,7 +97,7 @@ function revertDeniedFile(
   const timestamp = new Date().toISOString();
   appendLine(
     revertedPath,
-    `## ${timestamp}\n- \`${rel}\` â€” ${reason}`,
+    `## ${timestamp}\n- \`${rel}\` - ${reason}`,
   );
 
   if (!getGlobalOptions().json) {

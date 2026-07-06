@@ -13,7 +13,7 @@ import {
   type OrchestrationSummary,
 } from "../core/orchestration";
 
-/** Max learnings in session inject â€” keep hooks fast. */
+/** Max learnings in session inject - keep hooks fast. */
 const INJECT_MAX_LEARNINGS = 10;
 
 export interface ContextInjectLearning {
@@ -42,7 +42,7 @@ function formatOpenDecisionsSection(decisions: Decision[]): string {
     return "";
   }
   const lines: string[] = [
-    "## Open Decisions â€” discuss with user before changing scoped code",
+    "## Open Decisions - discuss with user before changing scoped code",
     "",
   ];
   for (const d of decisions) {
@@ -126,7 +126,7 @@ function formatInjectText(
 
 /**
  * Build session-inject payload for hooks (Cursor sessionStart, Claude SessionStart).
- * Read-only â€” no network or codebase scan.
+ * Read-only - no network or codebase scan.
  */
 export function formatInjectPayload(harnessDir: string): ContextInjectPayload {
   const config = loadConfig(harnessDir);

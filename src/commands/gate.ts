@@ -57,7 +57,7 @@ export interface GateInstallCommandOptions {
 }
 
 /**
- * `gate check --agent <name>` â€” read stdin, delegate to the agent adapter.
+ * `gate check --agent <name>` - read stdin, delegate to the agent adapter.
  */
 export function runGateCheck(opts: GateCheckOptions): void {
   const harnessDir = requireHarness();
@@ -81,7 +81,7 @@ export function runGateCheck(opts: GateCheckOptions): void {
 }
 
 /**
- * `gate precommit` â€” evaluate staged files; block on open discussion or gated scopes.
+ * `gate precommit` - evaluate staged files; block on open discussion or gated scopes.
  */
 export function runGatePrecommit(): void {
   const harnessDir = requireHarness();
@@ -139,7 +139,7 @@ export function runGatePrecommit(): void {
 }
 
 /**
- * `gate install [--agent] [--no-git]` â€” deep-merge hooks and print enforcement table.
+ * `gate install [--agent] [--no-git]` - deep-merge hooks and print enforcement table.
  */
 export function runGateInstallCommand(opts: GateInstallCommandOptions): void {
   const harnessDir = requireHarness();

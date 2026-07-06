@@ -5,7 +5,6 @@ import { slugify, warn, withLock } from "./io";
 import { appendLearning, autoResolveBySourceIds } from "./memory";
 import { defaultFrontmatter, writeRule } from "./rules";
 import { getStateFilePath, loadState, saveState } from "./state";
-import { runSync } from "./sync";
 
 const MODULE_SECTIONS = new Set(["03", "06", "07", "08"]);
 const GLOBAL_SECTIONS = new Set(["01", "02", "04", "05", "09", "10", "11"]);
@@ -41,7 +40,7 @@ function extractModules(content: string): Array<{ name: string; body: string }> 
   if (parts.length <= 1) return modules;
   const first = parts[0];
   if (first) {
-    // preamble before first module — ignore
+    // preamble before first module - ignore
   }
   for (let i = 1; i < parts.length; i++) {
     const part = parts[i];
@@ -129,7 +128,7 @@ function parseAppendixLearnings(
         const sourceItemId = m[0];
         items.push({
           sourceItemId,
-          title: `Unverified: ${sourceItemId} — confirm before implementing`,
+          title: `Unverified: ${sourceItemId} - confirm before implementing`,
           detail: block.trim().slice(0, 500),
           severity: "med",
           scope: moduleMap[sourceItemId] ?? ["**/*"],
@@ -153,7 +152,7 @@ function parseAppendixLearnings(
     const name = cells[1] ?? sourceItemId;
     items.push({
       sourceItemId,
-      title: `Unverified: ${sourceItemId} (${name}) — confirm before implementing`,
+      title: `Unverified: ${sourceItemId} (${name}) - confirm before implementing`,
       detail: `QA status: ${statusCell}`,
       severity,
       scope: moduleMap[name] ?? ["**/*"],
@@ -282,8 +281,6 @@ export async function ingestSrs(
     if (reingest) {
       autoResolved = autoResolveBySourceIds(harnessDir, presentSourceIds);
     }
-
-    void runSync(harnessDir);
 
     return { knowledgeUpserted, learningsSeeded, autoResolved };
   });

@@ -181,7 +181,7 @@ const decision = program
 
 decision
   .command("open")
-  .description("Open a discussion â€” blocks gated scopes until resolved")
+  .description("Open a discussion - blocks gated scopes until resolved")
   .option("--question <text>", "Business question to discuss with the user")
   .option("--detail <text>", "Additional context")
   .option("--scope <glob>", "Affected file glob(s), comma-separated")
@@ -231,7 +231,7 @@ gate
 
 gate
   .command("precommit")
-  .description("Git pre-commit backstop â€” deny staged files in gated scopes")
+  .description("Git pre-commit backstop - deny staged files in gated scopes")
   .action(() => {
     runGatePrecommit();
   });

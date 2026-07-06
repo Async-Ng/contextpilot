@@ -101,9 +101,10 @@ export async function runSrsIngest(options: {
 }): Promise<void> {
   const harnessDir = requireHarness();
   const result = await ingestSrs(harnessDir, options.path, options.reingest ?? false);
+  const synced = await runSync(harnessDir);
   out(
     `Ingested ${result.knowledgeUpserted} knowledge rule(s), seeded ${result.learningsSeeded} learning(s).`,
-    { status: "ingested", ...result },
+    { status: "ingested", ...result, synced },
   );
   process.exit(EXIT_OK);
 }

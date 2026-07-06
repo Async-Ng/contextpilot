@@ -21,16 +21,104 @@ export interface SyncResult {
   warnings: string[];
 }
 
+function projectRelativePath(projectRoot: string, fullPath: string): string {
+  return path.relative(projectRoot, fullPath).replace(/\\/g, "/");
+}
+
+function normalizeExcerpt(text: string, maxChars: number): string {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxChars) {
+    return normalized;
+  }
+  return `${normalized.slice(0, Math.max(0, maxChars - 3)).trimEnd()}...`;
+}
+
+function formatList(values: string[]): string {
+  return values.length > 0 ? values.join(", ") : "(none)";
+}
+
+function buildKnowledgeIndexContent(
+  config: HarnessConfig,
+  projectRoot: string,
+  knowledgeRules: Rule[],
+): string {
+  const lines: string[] = [
+    config.header,
+    "# ContextPilot Knowledge Index",
+    "",
+    "Use this index to choose which local knowledge files to read for the current task. Read the full source file before relying on a knowledge item.",
+    "",
+  ];
+
+  for (const rule of knowledgeRules) {
+    lines.push(
+      `## ${rule.title}`,
+      "",
+      `- ID: ${rule.id}`,
+      `- Priority: ${rule.priority}`,
+      `- Scope: ${formatList(rule.scope)}`,
+      `- Targets: ${formatList(rule.targets)}`,
+      `- Source: ${projectRelativePath(projectRoot, rule.filePath)}`,
+    );
+    const excerpt = normalizeExcerpt(
+      rule.body,
+      config.agentContext.knowledgeExcerptChars,
+    );
+    if (excerpt) {
+      lines.push(`- Excerpt: ${excerpt}`);
+    }
+    lines.push("");
+  }
+
+  return lines.join("\n");
+}
+
+function appendKnowledgeSection(
+  sections: string[],
+  config: HarnessConfig,
+  projectRoot: string,
+  knowledgeRules: Rule[],
+): void {
+  if (knowledgeRules.length === 0) {
+    return;
+  }
+
+  if (config.agentContext.knowledgeMode === "inline") {
+    sections.push("# Project Knowledge", "");
+    for (const r of knowledgeRules) {
+      sections.push(`## ${r.title}`, "", r.body, "");
+    }
+    return;
+  }
+
+  const indexRel = config.agentContext.knowledgeIndexFile.replace(/\\/g, "/");
+  sections.push(
+    "# Project Knowledge Index",
+    "",
+    `Full project knowledge is indexed at \`${indexRel}\`.`,
+    "Before relying on SRS, requirements, or imported knowledge, read the relevant source files listed in that index for the current task scope.",
+    "",
+  );
+  for (const r of knowledgeRules) {
+    sections.push(
+      `- ${r.title} (${r.id}) - scope: ${formatList(r.scope)} - source: ${projectRelativePath(projectRoot, r.filePath)}`,
+    );
+  }
+  sections.push("");
+}
+
 function buildSingleFileContent(
   config: HarnessConfig,
   harnessDir: string,
   agent: AgentName,
+  allRules: Rule[],
 ): string {
   const rules = filterRulesForAgent(
-    sortRules(listRules(harnessDir)),
+    sortRules(allRules),
     agent,
     config.dedupeGlobal,
   );
+  const projectRoot = path.dirname(harnessDir);
   const ruleRules = rules.filter((r) => r.type === "rule");
   const knowledgeRules = rules.filter((r) => r.type === "knowledge");
   const focus = readFocus(harnessDir);
@@ -49,12 +137,7 @@ function buildSingleFileContent(
     }
   }
 
-  if (knowledgeRules.length > 0) {
-    sections.push("# Project Knowledge", "");
-    for (const r of knowledgeRules) {
-      sections.push(`## ${r.title}`, "", r.body, "");
-    }
-  }
+  appendKnowledgeSection(sections, config, projectRoot, knowledgeRules);
 
   if (focus) {
     sections.push("# Current Focus", "", focus, "");
@@ -62,7 +145,7 @@ function buildSingleFileContent(
 
   if (learningsText) {
     sections.push(
-      "# Learned Constraints â€” DO NOT repeat these mistakes",
+      "# Learned Constraints - DO NOT repeat these mistakes",
       "",
       learningsText,
       "",
@@ -92,10 +175,11 @@ function mdcFrontmatter(
 function buildCursorFiles(
   config: HarnessConfig,
   harnessDir: string,
+  allRules: Rule[],
 ): Map<string, string> {
   const files = new Map<string, string>();
   const rules = filterRulesForAgent(
-    sortRules(listRules(harnessDir)),
+    sortRules(allRules),
     "cursor",
     config.dedupeGlobal,
   );
@@ -139,7 +223,7 @@ function buildCursorFiles(
     files.set(
       "_learnings.mdc",
       mdcFrontmatter("Learned constraints", ["**/*"], true) +
-        `# Learned Constraints â€” DO NOT repeat these mistakes\n\n${learningsText}\n`,
+        `# Learned Constraints - DO NOT repeat these mistakes\n\n${learningsText}\n`,
     );
   }
 
@@ -210,6 +294,55 @@ function cleanupStaleCursorFiles(
   }
 }
 
+function cleanupStaleKnowledgeIndex(
+  outputPath: string,
+  state: HarnessState,
+  dryRun: boolean,
+): void {
+  if (!state.generated[outputPath]) {
+    return;
+  }
+  if (!dryRun && fs.existsSync(outputPath)) {
+    fs.unlinkSync(outputPath);
+  }
+  if (!dryRun) {
+    delete state.generated[outputPath];
+  }
+}
+
+function warnIfMainFileTooLarge(
+  outputPath: string,
+  content: string,
+  maxChars: number,
+  warnings: string[],
+): void {
+  if (content.length <= maxChars) {
+    return;
+  }
+  warnings.push(
+    `Generated main agent file exceeds maxMainFileChars at ${outputPath}: ${content.length}/${maxChars} chars`,
+  );
+}
+
+function filterKnowledgeRulesForIndex(
+  rules: Rule[],
+  agents: AgentName[],
+  dedupeGlobal: boolean,
+): Rule[] {
+  const byId = new Map<string, Rule>();
+  for (const agent of agents) {
+    if (agent === "cursor") {
+      continue;
+    }
+    for (const rule of filterRulesForAgent(sortRules(rules), agent, dedupeGlobal)) {
+      if (rule.type === "knowledge") {
+        byId.set(rule.id, rule);
+      }
+    }
+  }
+  return sortRules([...byId.values()]);
+}
+
 export async function runSync(
   harnessDir: string,
   options: SyncOptions = {},
@@ -231,15 +364,49 @@ export async function runSync(
     const warnings: string[] = [];
     const dryRun = options.dryRun ?? false;
     const allowDrift = options.allowDriftOverwrite ?? true;
+    const projectRoot = path.dirname(harnessDir);
+    const rules = listRules(harnessDir);
+    const knowledgeRules = filterKnowledgeRulesForIndex(
+      rules,
+      agents,
+      config.dedupeGlobal,
+    );
+    const knowledgeIndexPath = resolveProjectPath(
+      harnessDir,
+      config.agentContext.knowledgeIndexFile,
+    );
+    const shouldWriteKnowledgeIndex =
+      knowledgeRules.length > 0 &&
+      config.agentContext.knowledgeMode === "manifest" &&
+      agents.some((agent) => agent !== "cursor");
+
+    if (shouldWriteKnowledgeIndex) {
+      const content = buildKnowledgeIndexContent(
+        config,
+        projectRoot,
+        knowledgeRules,
+      );
+      const hasDrift = checkDrift(state, knowledgeIndexPath, warnings);
+      if (hasDrift && !allowDrift) {
+        skipped.push(knowledgeIndexPath);
+      } else {
+        if (hasDrift) {
+          warn(`Overwriting drifted file: ${knowledgeIndexPath}`);
+        }
+        writeOutput(knowledgeIndexPath, content, state, undefined, dryRun);
+        written.push(knowledgeIndexPath);
+      }
+    } else {
+      cleanupStaleKnowledgeIndex(knowledgeIndexPath, state, dryRun);
+    }
 
     for (const agent of agents) {
       const target = config.targets[agent];
       const outputRel = target.output;
-      const projectRoot = path.dirname(harnessDir);
 
       if (agent === "cursor") {
         const outputDir = path.join(projectRoot, outputRel);
-        const cursorFiles = buildCursorFiles(config, harnessDir);
+        const cursorFiles = buildCursorFiles(config, harnessDir, rules);
         cleanupStaleCursorFiles(
           outputDir,
           new Set(cursorFiles.keys()),
@@ -269,13 +436,18 @@ export async function runSync(
         if (hasDrift) {
           warn(`Overwriting drifted file: ${fullPath}`);
         }
-        const content = buildSingleFileContent(config, harnessDir, agent);
+        const content = buildSingleFileContent(config, harnessDir, agent, rules);
+        warnIfMainFileTooLarge(
+          fullPath,
+          content,
+          config.agentContext.maxMainFileChars,
+          warnings,
+        );
         writeOutput(fullPath, content, state, undefined, dryRun);
         written.push(fullPath);
       }
     }
 
-    const rules = listRules(harnessDir);
     for (const rule of rules) {
       for (const agent of agents) {
         if (!rule.targets.includes(agent)) continue;

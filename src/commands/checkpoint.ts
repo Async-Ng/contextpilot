@@ -16,7 +16,7 @@ export const CHECKPOINT_NUDGE =
 
 /**
  * Session stop hook: sync agent targets and nudge the agent to record learnings.
- * Non-blocking â€” exit 0 unless sync fails.
+ * Non-blocking - exit 0 unless sync fails.
  */
 export async function runCheckpoint(): Promise<void> {
   const harnessDir = requireHarness();

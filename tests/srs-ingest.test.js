@@ -47,6 +47,20 @@ function readRule(cwd, id) {
   return fs.readFileSync(path.join(cwd, ".contextpilot", "rules", `${id}.md`), "utf8");
 }
 
+function readConfig(cwd) {
+  return JSON.parse(
+    fs.readFileSync(path.join(cwd, ".contextpilot", "harness.config.json"), "utf8"),
+  );
+}
+
+function writeConfig(cwd, config) {
+  fs.writeFileSync(
+    path.join(cwd, ".contextpilot", "harness.config.json"),
+    `${JSON.stringify(config, null, 2)}\n`,
+    "utf8",
+  );
+}
+
 test("srs ingest reads nested module files and ignores section README indexes", () => {
   withTempProject((cwd) => {
     runJson(cwd, ["setup", "--no-git"]);
@@ -185,6 +199,96 @@ test("srs ingest keeps legacy flat module files compatible", () => {
     assert.equal(result.code, 0);
     assert.equal(result.json.knowledgeUpserted, 1);
     assert.match(readRule(cwd, "srs-03-auth"), /Legacy auth body/);
+  });
+});
+
+test("srs ingest keeps full knowledge out of single-file agent targets by default", () => {
+  withTempProject((cwd) => {
+    runJson(cwd, ["setup", "--no-git", "--agent", "codex"]);
+    writeFile(
+      cwd,
+      "docs/srs/03-functional-requirements/module-auth.md",
+      "# Section 3: Functional Requirements - Module: Auth\n\nFR auth body with NEVER_INLINE_BODY marker\n",
+    );
+
+    const result = runJson(cwd, ["srs", "ingest"]);
+
+    assert.equal(result.code, 0);
+    const agentsMd = fs.readFileSync(path.join(cwd, "AGENTS.md"), "utf8");
+    const index = fs.readFileSync(
+      path.join(cwd, ".contextpilot", "context", "knowledge-index.md"),
+      "utf8",
+    );
+
+    assert.match(agentsMd, /# Project Knowledge Index/);
+    assert.match(agentsMd, /\.contextpilot\/context\/knowledge-index\.md/);
+    assert.doesNotMatch(agentsMd, /NEVER_INLINE_BODY/);
+    assert.match(index, /SRS 03: Auth/);
+    assert.match(index, /- ID: srs-03-auth/);
+    assert.match(index, /- Scope: \*\*\/auth\*/);
+    assert.match(index, /- Source: \.contextpilot\/rules\/srs-03-auth\.md/);
+    assert.match(index, /NEVER_INLINE_BODY marker/);
+    assert.match(readRule(cwd, "srs-03-auth"), /NEVER_INLINE_BODY marker/);
+  });
+});
+
+test("single-file agent targets can opt back into inline knowledge", () => {
+  withTempProject((cwd) => {
+    runJson(cwd, ["setup", "--no-git", "--agent", "codex"]);
+    const config = readConfig(cwd);
+    config.agentContext.knowledgeMode = "inline";
+    writeConfig(cwd, config);
+    writeFile(
+      cwd,
+      "docs/srs/03-functional-requirements/module-auth.md",
+      "# Section 3: Functional Requirements - Module: Auth\n\nFR auth body with INLINE_COMPAT marker\n",
+    );
+
+    const result = runJson(cwd, ["srs", "ingest"]);
+
+    assert.equal(result.code, 0);
+    assert.match(
+      fs.readFileSync(path.join(cwd, "AGENTS.md"), "utf8"),
+      /INLINE_COMPAT marker/,
+    );
+    assert.equal(
+      fs.existsSync(path.join(cwd, ".contextpilot", "context", "knowledge-index.md")),
+      false,
+    );
+  });
+});
+
+test("sync warns when a generated main agent file exceeds the configured size budget", () => {
+  withTempProject((cwd) => {
+    runJson(cwd, ["setup", "--no-git", "--agent", "codex"]);
+    const config = readConfig(cwd);
+    config.agentContext.maxMainFileChars = 100;
+    writeConfig(cwd, config);
+    writeFile(
+      cwd,
+      ".contextpilot/rules/huge-rule.md",
+      [
+        "---",
+        "id: huge-rule",
+        "title: Huge Rule",
+        "type: rule",
+        "targets:",
+        "  - codex",
+        "---",
+        "",
+        "This rule is intentionally long. ".repeat(20),
+      ].join("\n"),
+    );
+
+    const result = runJson(cwd, ["sync"]);
+
+    assert.equal(result.code, 0);
+    assert.equal(result.json.status, "synced");
+    assert.ok(
+      result.json.warnings.some((warning) =>
+        warning.includes("Generated main agent file exceeds maxMainFileChars"),
+      ),
+    );
   });
 });
 

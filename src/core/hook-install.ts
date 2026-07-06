@@ -402,7 +402,7 @@ function installAgent(
         installed: false,
         files: [],
         enforcement: { preBlock: false, revert: false, commitOnly: true },
-        notes: "VERIFY: No Copilot hook API confirmed in v0.2 â€” git pre-commit backstop only.",
+        notes: "VERIFY: No Copilot hook API confirmed in v0.2 - git pre-commit backstop only.",
       };
     case "windsurf":
       return {
@@ -410,7 +410,7 @@ function installAgent(
         installed: false,
         files: [],
         enforcement: { preBlock: false, revert: false, commitOnly: true },
-        notes: "Windsurf hook install not supported in v0.2 â€” git pre-commit backstop only.",
+        notes: "Windsurf hook install not supported in v0.2 - git pre-commit backstop only.",
       };
     default: {
       const _exhaustive: never = agent;

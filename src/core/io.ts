@@ -144,7 +144,7 @@ export function slugify(text: string): string {
     .slice(0, 80) || "item";
 }
 
-/** Expand a leading `~` to the user home directory (for discover paths Â§9). */
+/** Expand a leading `~` to the user home directory. */
 export function expandHome(p: string): string {
   if (p === "~") {
     return os.homedir();

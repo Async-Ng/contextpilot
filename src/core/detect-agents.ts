@@ -57,7 +57,7 @@ export function detectAgents(projectRoot: string): AgentName[] {
     detected.add("windsurf");
   }
 
-  // AGENTS.md is the universal agent context file â€” always sync it.
+  // AGENTS.md is the universal agent context file - always sync it.
   detected.add("codex");
 
   return DETECTION_ORDER.filter((agent) => detected.has(agent));
