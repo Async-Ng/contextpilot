@@ -6,6 +6,16 @@ export const generatedEntrySchema = z.object({
   sourceRuleId: z.string().optional(),
 });
 
+export const srsStatusSchema = z.enum(["missing", "bootstrapped", "ingested"]);
+
+export const srsStateSchema = z
+  .object({
+    status: srsStatusSchema.optional(),
+    path: z.string().optional(),
+    updatedAt: z.string().optional(),
+  })
+  .default({});
+
 export const harnessStateSchema = z.object({
   generated: z.record(generatedEntrySchema).default({}),
   adopted: z.record(z.string()).default({}),
@@ -22,11 +32,14 @@ export const harnessStateSchema = z.object({
       activeRunId: z.string().optional(),
     })
     .default({}),
+  srs: srsStateSchema,
 });
 
 export type HarnessState = z.infer<typeof harnessStateSchema>;
 export type GeneratedEntry = z.infer<typeof generatedEntrySchema>;
+export type SrsStatus = z.infer<typeof srsStatusSchema>;
+export type SrsState = z.infer<typeof srsStateSchema>;
 
 export function emptyState(): HarnessState {
-  return { generated: {}, adopted: {}, skills: {}, orchestration: {} };
+  return { generated: {}, adopted: {}, skills: {}, orchestration: {}, srs: {} };
 }

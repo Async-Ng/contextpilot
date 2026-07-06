@@ -5,6 +5,7 @@ import { slugify, warn, withLock } from "./io";
 import { appendLearning, autoResolveBySourceIds } from "./memory";
 import { defaultFrontmatter, writeRule } from "./rules";
 import { getStateFilePath, loadState, saveState } from "./state";
+import { setSrsStateOnState } from "./srs-state";
 
 const MODULE_SECTIONS = new Set(["03", "06", "07", "08"]);
 const GLOBAL_SECTIONS = new Set(["01", "02", "04", "05", "09", "10", "11"]);
@@ -281,6 +282,14 @@ export async function ingestSrs(
     if (reingest) {
       autoResolved = autoResolveBySourceIds(harnessDir, presentSourceIds);
     }
+
+    const state = loadState(harnessDir);
+    setSrsStateOnState(
+      state,
+      "ingested",
+      path.relative(projectRoot, dir).replace(/\\/g, "/"),
+    );
+    saveState(harnessDir, state);
 
     return { knowledgeUpserted, learningsSeeded, autoResolved };
   });

@@ -30,6 +30,16 @@ function runJson(cwd, args) {
   };
 }
 
+function readState(cwd) {
+  return JSON.parse(fs.readFileSync(path.join(cwd, ".contextpilot", "state.json"), "utf8"));
+}
+
+function writeFile(cwd, relPath, content) {
+  const fullPath = path.join(cwd, relPath);
+  fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+  fs.writeFileSync(fullPath, content, "utf8");
+}
+
 test("setup on a fresh project creates harness storage and generated protocol", () => {
   withTempProject((cwd) => {
     const result = runJson(cwd, ["setup", "--no-git"]);
@@ -41,10 +51,29 @@ test("setup on a fresh project creates harness storage and generated protocol", 
     assert.ok(fs.existsSync(path.join(cwd, ".contextpilot", "harness.config.json")));
     assert.ok(fs.existsSync(path.join(cwd, ".contextpilot", "orchestration", "runs.jsonl")));
     assert.ok(fs.existsSync(path.join(cwd, ".contextpilot", "orchestration", "events.jsonl")));
+    assert.equal(readState(cwd).srs.status, "missing");
 
     const agentsMd = fs.readFileSync(path.join(cwd, "AGENTS.md"), "utf8");
     assert.match(agentsMd, /invisible to the user/);
     assert.match(agentsMd, /User Interaction Rule/);
+    assert.match(agentsMd, /SRS Bootstrap Required/);
+  });
+});
+
+test("setup ingests existing docs/srs and marks SRS ingested", () => {
+  withTempProject((cwd) => {
+    writeFile(
+      cwd,
+      "docs/srs/03-functional-requirements/module-auth.md",
+      "# Section 3: Functional Requirements - Module: Auth\n\nExisting auth requirements\n",
+    );
+
+    const result = runJson(cwd, ["setup", "--no-git"]);
+
+    assert.equal(result.code, 0);
+    assert.equal(result.json.srs.knowledgeUpserted, 1);
+    assert.equal(readState(cwd).srs.status, "ingested");
+    assert.ok(fs.existsSync(path.join(cwd, ".contextpilot", "rules", "srs-03-auth.md")));
   });
 });
 

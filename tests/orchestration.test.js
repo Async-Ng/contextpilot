@@ -35,6 +35,20 @@ function runJson(cwd, args, input) {
   };
 }
 
+function readConfig(cwd) {
+  return JSON.parse(
+    fs.readFileSync(path.join(cwd, ".contextpilot", "harness.config.json"), "utf8"),
+  );
+}
+
+function writeConfig(cwd, config) {
+  fs.writeFileSync(
+    path.join(cwd, ".contextpilot", "harness.config.json"),
+    `${JSON.stringify(config, null, 2)}\n`,
+    "utf8",
+  );
+}
+
 test("orchestrate start creates a coding run and active plan step", () => {
   withProject((cwd) => {
     const result = runJson(cwd, [
@@ -132,5 +146,36 @@ test("gate denies file edits during non-edit orchestration step", () => {
 
     assert.equal(result.status, 2);
     assert.match(result.stderr, /does not allow file edits/);
+  });
+});
+
+test("strict SRS bootstrap mode blocks business edits while allowing docs/srs", () => {
+  withProject((cwd) => {
+    const config = readConfig(cwd);
+    config.srs.bootstrapMode = "strict";
+    writeConfig(cwd, config);
+
+    const srcResult = spawnSync(
+      "node",
+      [CLI, "gate", "check", "--agent", "claude"],
+      {
+        cwd,
+        input: JSON.stringify({ tool_input: { file_path: "src/app.ts" } }),
+        encoding: "utf8",
+      },
+    );
+    const srsResult = spawnSync(
+      "node",
+      [CLI, "gate", "check", "--agent", "claude"],
+      {
+        cwd,
+        input: JSON.stringify({ tool_input: { file_path: "docs/srs/README.md" } }),
+        encoding: "utf8",
+      },
+    );
+
+    assert.equal(srcResult.status, 2);
+    assert.match(srcResult.stderr, /contextpilot srs bootstrap --json/);
+    assert.equal(srsResult.status, 0);
   });
 });

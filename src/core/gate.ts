@@ -9,6 +9,7 @@ import {
   getActiveStep,
   getOrchestrationSummary,
 } from "./orchestration";
+import { getSrsStatus } from "./srs-state";
 
 export interface GateInput {
   file?: string;
@@ -107,6 +108,18 @@ function scopeDenyReason(file: string, scopeHint: string): string {
   );
 }
 
+function srsBootstrapScope(config: HarnessConfig): string[] {
+  const paths = new Set([config.srs.bootstrapPath, config.srs.path]);
+  return [...paths].map((p) => `${p.replace(/\\/g, "/").replace(/\/+$/, "")}/**`);
+}
+
+function srsBootstrapDenyReason(file: string): string {
+  return (
+    `File "${file}" is in a business scope, but this greenfield project has no SRS bootstrap yet. ` +
+    "Run: contextpilot srs bootstrap --json"
+  );
+}
+
 function orchestrationDeny(
   harnessDir: string,
   runId: string,
@@ -128,6 +141,19 @@ function evaluateFile(
   file: string,
 ): GateResult {
   const relFile = normalizeRelativePath(harnessDir, file);
+
+  if (
+    config.srs.requiredForGreenfield &&
+    config.srs.bootstrapMode === "strict" &&
+    getSrsStatus(harnessDir).status === "missing" &&
+    !matchesGlob(relFile, srsBootstrapScope(config)) &&
+    matchesGlob(relFile, config.gate.businessScopes)
+  ) {
+    return {
+      decision: "deny",
+      reason: srsBootstrapDenyReason(relFile),
+    };
+  }
 
   const open = listOpenDecisions(harnessDir);
   if (open.length > 0) {

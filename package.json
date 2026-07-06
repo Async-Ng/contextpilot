@@ -1,6 +1,6 @@
 {
   "name": "@async-nguyen/contextpilot",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Local-first control plane that pilots AI coding agents with project context, memory, orchestration, gates, and SRS knowledge.",
   "main": "dist/index.js",
   "bin": {

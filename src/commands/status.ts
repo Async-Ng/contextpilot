@@ -52,6 +52,11 @@ export function runStatus(): void {
       lines.push(`  ${d.id}: ${d.question}`);
     }
   }
+  if (report.srs.requiredForGreenfield && report.srs.status === "missing") {
+    lines.push(chalk.yellow(`SRS missing: run contextpilot srs bootstrap --json (${report.srs.path})`));
+  } else if (report.srs.status === "bootstrapped") {
+    lines.push(chalk.cyan(`SRS bootstrapped: write SRS in ${report.srs.path}, then run srs ingest.`));
+  }
   if (report.orchestration.activeRun) {
     const run = report.orchestration.activeRun;
     const step = report.orchestration.activeStep;

@@ -53,6 +53,10 @@ function readConfig(cwd) {
   );
 }
 
+function readState(cwd) {
+  return JSON.parse(fs.readFileSync(path.join(cwd, ".contextpilot", "state.json"), "utf8"));
+}
+
 function writeConfig(cwd, config) {
   fs.writeFileSync(
     path.join(cwd, ".contextpilot", "harness.config.json"),
@@ -122,6 +126,66 @@ test("srs install creates shared skill and Claude compatibility copy", () => {
     assert.ok(fs.existsSync(path.join(cwd, ".contextpilot", "skills", "fullstack-to-srs", "SKILL.md")));
     assert.ok(fs.existsSync(path.join(cwd, ".claude", "skills", "fullstack-to-srs", "SKILL.md")));
     assert.match(fs.readFileSync(path.join(cwd, "CLAUDE.md"), "utf8"), /\.contextpilot\/skills\/fullstack-to-srs\/SKILL\.md/);
+  });
+});
+
+test("srs bootstrap creates skeleton, skill, focus, orchestration, and syncs", () => {
+  withTempProject((cwd) => {
+    runJson(cwd, ["setup", "--no-git"]);
+
+    const result = runJson(cwd, ["srs", "bootstrap"]);
+
+    assert.equal(result.code, 0);
+    assert.equal(result.json.status, "bootstrapped");
+    assert.equal(result.json.srs.status, "bootstrapped");
+    assert.equal(result.json.orchestration.status, "started");
+    assert.equal(result.json.orchestration.run.goal, "Create initial SRS");
+    assert.deepEqual(result.json.orchestration.run.scope, ["docs/srs/**"]);
+    assert.ok(fs.existsSync(path.join(cwd, "docs", "srs", "README.md")));
+    assert.ok(fs.existsSync(path.join(cwd, ".contextpilot", "skills", "fullstack-to-srs", "SKILL.md")));
+    assert.match(
+      fs.readFileSync(path.join(cwd, ".contextpilot", "context", "current.md"), "utf8"),
+      /Build initial SRS/,
+    );
+    assert.match(fs.readFileSync(path.join(cwd, "AGENTS.md"), "utf8"), /SRS Bootstrap Required/);
+    assert.equal(readState(cwd).srs.status, "bootstrapped");
+  });
+});
+
+test("srs bootstrap is idempotent and does not overwrite existing SRS README", () => {
+  withTempProject((cwd) => {
+    runJson(cwd, ["setup", "--no-git"]);
+    writeFile(cwd, "docs/srs/README.md", "# Custom SRS\n\nKeep this.\n");
+
+    const first = runJson(cwd, ["srs", "bootstrap"]);
+    const second = runJson(cwd, ["srs", "bootstrap"]);
+
+    assert.equal(first.code, 0);
+    assert.equal(second.code, 0);
+    assert.equal(second.json.readme.created, false);
+    assert.equal(second.json.orchestration.status, "already_active");
+    assert.equal(fs.readFileSync(path.join(cwd, "docs", "srs", "README.md"), "utf8"), "# Custom SRS\n\nKeep this.\n");
+  });
+});
+
+test("srs status reports bootstrap state and ingest transitions to ingested", () => {
+  withTempProject((cwd) => {
+    runJson(cwd, ["setup", "--no-git"]);
+    runJson(cwd, ["srs", "bootstrap"]);
+    writeFile(
+      cwd,
+      "docs/srs/03-functional-requirements/module-auth.md",
+      "# Section 3: Functional Requirements - Module: Auth\n\nBootstrapped auth requirements\n",
+    );
+
+    const statusBefore = runJson(cwd, ["srs", "status"]);
+    const ingest = runJson(cwd, ["srs", "ingest", "--path", "docs/srs", "--reingest"]);
+    const statusAfter = runJson(cwd, ["srs", "status"]);
+
+    assert.equal(statusBefore.json.srs.status, "bootstrapped");
+    assert.equal(ingest.code, 0);
+    assert.equal(readState(cwd).srs.status, "ingested");
+    assert.equal(statusAfter.json.srs.status, "ingested");
   });
 });
 

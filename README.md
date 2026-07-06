@@ -42,7 +42,7 @@ This runs the full pipeline without prompts:
 1. **Detect agents** - scan `.claude/`, `.cursor/`, `AGENTS.md`, `.github/copilot-instructions.md`, `.windsurf/`; always includes Codex so `AGENTS.md` is generated
 2. **Scaffold** `.contextpilot/` (rules, memory, context, decisions, orchestration)
 3. **`gate install`** - deep-merge hooks for detected agents + git pre-commit backstop
-4. **SRS ingest** if `docs/srs/` exists
+4. **SRS ingest** if `docs/srs/` exists, or mark greenfield projects as missing SRS
 5. **Auto-discover** external rules/skills (knowledge, low priority, no prompts)
 6. **`sync`** - regenerate agent target files
 
@@ -186,6 +186,8 @@ The user should not need to know these commands during normal use.
 | `gate precommit` | Yes | No | Git pre-commit backstop |
 | `gate install` | Yes | Yes | Install hooks + git backstop |
 | `srs install` | Yes | Yes | Install bundled fullstack-to-srs skill for all configured agents |
+| `srs status` | Yes | No | Show SRS bootstrap/ingest state |
+| `srs bootstrap` | Yes | Yes | Prepare a greenfield SRS-first workflow |
 | `srs ingest` | Yes | Yes | Ingest `docs/srs/` into knowledge |
 | `discover` | **Human** | Yes | Import existing rules/skills |
 | `add` | **Human** | Yes | Import a file/dir as rules |
@@ -271,6 +273,15 @@ contextpilot discover --dry-run --json --no-input
 ```
 
 ### SRS ingest
+
+```bash
+contextpilot srs status --json
+contextpilot srs bootstrap --json
+# Agent reads .contextpilot/skills/fullstack-to-srs/SKILL.md and writes docs/srs/
+contextpilot srs ingest --path docs/srs --reingest --json
+```
+
+`srs.bootstrapMode` defaults to `"nudge"`, so coding is not blocked. Set it to `"strict"` in `.contextpilot/harness.config.json` to deny business-scope edits while SRS status is `missing`; edits under `docs/srs/**` remain allowed.
 
 ```bash
 contextpilot srs install

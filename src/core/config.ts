@@ -20,6 +20,9 @@ const discoverConfigSchema = z.object({
 const srsConfigSchema = z.object({
   path: z.string(),
   skillPath: z.string(),
+  requiredForGreenfield: z.boolean().default(true),
+  bootstrapPath: z.string().default("docs/srs"),
+  bootstrapMode: z.enum(["nudge", "strict"]).default("nudge"),
   moduleMap: z.record(z.array(z.string())).default({}),
 });
 
@@ -83,6 +86,7 @@ export const harnessConfigSchema = z.object({
 });
 
 export type HarnessConfig = z.infer<typeof harnessConfigSchema>;
+export type SrsConfig = z.infer<typeof srsConfigSchema>;
 export type AgentName = z.infer<typeof agentSchema>;
 export type AgentContextConfig = z.infer<typeof agentContextConfigSchema>;
 export type KnowledgeMode = z.infer<typeof knowledgeModeSchema>;
@@ -155,6 +159,9 @@ export function defaultConfig(agents: AgentName[] = ["claude", "cursor", "codex"
     srs: {
       path: "docs/srs",
       skillPath: ".contextpilot/skills/fullstack-to-srs",
+      requiredForGreenfield: true,
+      bootstrapPath: "docs/srs",
+      bootstrapMode: "nudge",
       moduleMap: {},
     },
     agentContext: defaultAgentContextConfig(),

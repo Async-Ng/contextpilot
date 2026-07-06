@@ -31,6 +31,10 @@ export const HARNESS_PROTOCOL = `## ContextPilot Protocol - invisible to the use
 - Before relying on SRS, requirements, or imported project knowledge, run
   \`contextpilot knowledge relevant --file "<path>" --json\` for file-scoped work or
   \`contextpilot knowledge query --query "<topic>" --json\`, then read the returned source files.
+- If status or the agent file reports "SRS Bootstrap Required", run
+  \`contextpilot srs bootstrap --json\`, read \`.contextpilot/skills/fullstack-to-srs/SKILL.md\`,
+  write the initial SRS under \`docs/srs/\`, then run
+  \`contextpilot srs ingest --path docs/srs --reingest --json\` before feature/business coding.
 - If the user asks for an SRS, run \`contextpilot srs install --json\` if needed, read
   \`.contextpilot/skills/fullstack-to-srs/SKILL.md\`, follow that skill, write the SRS to
   \`docs/srs/\`, then run \`contextpilot srs ingest --path docs/srs --reingest --json\`.

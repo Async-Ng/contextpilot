@@ -55,6 +55,7 @@ import {
 import { importScanCandidates, scanDocs } from "../core/scan";
 
 import { ingestSrs, type IngestResult } from "../core/srs";
+import { setSrsState } from "../core/srs-state";
 
 import {
 
@@ -298,6 +299,10 @@ async function runInitYes(): Promise<void> {
   if (fs.existsSync(srsDir)) {
 
     srsResult = await ingestSrs(harnessDir);
+
+  } else if (config.srs.requiredForGreenfield) {
+
+    await setSrsState(harnessDir, "missing", config.srs.bootstrapPath);
 
   }
 

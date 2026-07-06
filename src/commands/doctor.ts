@@ -5,6 +5,7 @@ import { loadConfig, resolveProjectPath } from "../core/config-io";
 import { getGlobalOptions } from "../core/globals";
 import { getHarnessDir, out, EXIT_OK } from "../core/io";
 import { getOrchestrationSummary } from "../core/orchestration";
+import { getSrsStatus, type SrsStatusReport } from "../core/srs-state";
 
 export interface DoctorCheck {
   name: string;
@@ -18,6 +19,7 @@ export interface DoctorReport {
   harnessDir: string;
   checks: DoctorCheck[];
   orchestration?: ReturnType<typeof getOrchestrationSummary>;
+  srs?: SrsStatusReport;
 }
 
 function check(
@@ -92,6 +94,7 @@ export function runDoctor(): void {
   );
 
   let orchestration: DoctorReport["orchestration"];
+  let srs: DoctorReport["srs"];
 
   if (initialized) {
     const config = loadConfig(harnessDir);
@@ -136,6 +139,15 @@ export function runDoctor(): void {
     );
 
     orchestration = getOrchestrationSummary(harnessDir);
+    srs = getSrsStatus(harnessDir);
+    check(
+      checks,
+      "greenfield SRS",
+      !(srs.requiredForGreenfield && srs.status === "missing"),
+      `SRS status is ${srs.status}`,
+      `SRS is missing; run contextpilot srs bootstrap --json`,
+      "warn",
+    );
   }
 
   const report: DoctorReport = {
@@ -144,6 +156,7 @@ export function runDoctor(): void {
     harnessDir,
     checks,
     orchestration,
+    srs,
   };
 
   out(formatHuman(report), report);

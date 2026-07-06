@@ -36,7 +36,12 @@ import {
 import { refreshHarness } from "./commands/refresh";
 import { runResolve } from "./commands/resolve";
 import { runSetup } from "./commands/setup";
-import { runSrsIngest, runSrsInstall } from "./commands/srs";
+import {
+  runSrsBootstrap,
+  runSrsIngest,
+  runSrsInstall,
+  runSrsStatus,
+} from "./commands/srs";
 import { runStatus } from "./commands/status";
 import { runSyncCommand } from "./commands/sync";
 import { runWatch } from "./commands/watch";
@@ -352,6 +357,20 @@ program
   });
 
 const srs = program.command("srs").description("SRS integration");
+
+srs
+  .command("status")
+  .description("Show SRS bootstrap/ingest status")
+  .action(async () => {
+    await runSrsStatus();
+  });
+
+srs
+  .command("bootstrap")
+  .description("Bootstrap a greenfield SRS-first workflow")
+  .action(async () => {
+    await runSrsBootstrap();
+  });
 
 srs
   .command("install")

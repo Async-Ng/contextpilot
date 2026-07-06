@@ -14,6 +14,7 @@ import {
   out,
 } from "../core/io";
 import { ingestSrs, type IngestResult } from "../core/srs";
+import { setSrsState } from "../core/srs-state";
 import { runSync } from "../core/sync";
 import {
   autoAdoptDiscoverItems,
@@ -110,6 +111,8 @@ async function runFreshSetup(
   const srsDir = path.join(cwd, config.srs.path);
   if (fs.existsSync(srsDir)) {
     srs = await ingestSrs(harnessDir);
+  } else if (config.srs.requiredForGreenfield) {
+    await setSrsState(harnessDir, "missing", config.srs.bootstrapPath);
   }
 
   const discover = await autoAdoptDiscoverItems(harnessDir);

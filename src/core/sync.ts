@@ -7,6 +7,7 @@ import { sha256, sha256File, warn, withLock, writeAtomic } from "./io";
 import { formatLearningsSection, readActiveLearnings } from "./memory";
 import { HARNESS_PROTOCOL } from "./protocol";
 import { filterRulesForAgent, listRules, sortRules, type Rule } from "./rules";
+import { getSrsStatus } from "./srs-state";
 import { getStateFilePath, loadState, saveState, type HarnessState } from "./state";
 
 export interface SyncOptions {
@@ -107,6 +108,32 @@ function appendKnowledgeSection(
   sections.push("");
 }
 
+function buildSrsBootstrapSection(
+  config: HarnessConfig,
+  harnessDir: string,
+): string | null {
+  const srs = getSrsStatus(harnessDir);
+  if (
+    !config.srs.requiredForGreenfield ||
+    (srs.status !== "missing" && srs.status !== "bootstrapped")
+  ) {
+    return null;
+  }
+
+  const srsPath = srs.path || config.srs.bootstrapPath;
+  const skillPath = config.srs.skillPath.replace(/\\/g, "/");
+  return [
+    "# SRS Bootstrap Required",
+    "",
+    "This greenfield project does not have an ingested SRS yet.",
+    `Before feature or business coding, run \`contextpilot srs bootstrap --json\` if SRS is not bootstrapped yet.`,
+    `Use \`${skillPath}/SKILL.md\` to create the initial SRS under \`${srsPath}\`.`,
+    `After writing the SRS, run \`contextpilot srs ingest --path ${srsPath} --reingest --json\`.`,
+    "Nudge mode warns only. Strict mode may block business edits until bootstrap is started.",
+    "",
+  ].join("\n");
+}
+
 function buildSingleFileContent(
   config: HarnessConfig,
   harnessDir: string,
@@ -129,6 +156,10 @@ function buildSingleFileContent(
   );
 
   const sections: string[] = [config.header];
+  const srsBootstrapSection = buildSrsBootstrapSection(config, harnessDir);
+  if (srsBootstrapSection) {
+    sections.push(srsBootstrapSection);
+  }
 
   if (ruleRules.length > 0) {
     sections.push("# Project Rules", "");
@@ -196,6 +227,15 @@ function buildCursorFiles(
     learnings,
     config.maxLearningsPerFile,
   );
+  const srsBootstrapSection = buildSrsBootstrapSection(config, harnessDir);
+
+  if (srsBootstrapSection) {
+    files.set(
+      "_srs_bootstrap.mdc",
+      mdcFrontmatter("SRS bootstrap required", ["**/*"], true) +
+        `${srsBootstrapSection}\n`,
+    );
+  }
 
   const projectParts: string[] = [];
   for (const r of ruleRules) {

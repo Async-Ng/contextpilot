@@ -1,5 +1,12 @@
 ﻿# Changelog
 
+## 0.3.4 - Greenfield SRS bootstrap
+
+### Added
+
+- Greenfield SRS-first bootstrap state, protocol nudges, and `contextpilot srs bootstrap/status`.
+- Strict SRS bootstrap gate mode for blocking business edits until SRS bootstrap starts.
+
 ## 0.3.0 - Public beta
 
 ### Added
