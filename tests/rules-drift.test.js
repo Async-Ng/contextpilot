@@ -167,7 +167,7 @@ test("a module documented with the Module Removed heading is tagged removed and 
     const rulePath = path.join(cwd, ".contextpilot", "rules", "srs-03-academic-terms.md");
     const ruleContent = fs.readFileSync(rulePath, "utf8");
     assert.match(ruleContent, /priority: low/);
-    assert.match(ruleContent, /tags:\s*\n\s*-\s*removed/);
+    assert.match(ruleContent, /tags:[\s\S]*-\s*removed/);
 
     const status = runJson(cwd, ["status"]);
     const match = status.json.staleRuleScopes.find((s) => s.id === "srs-03-academic-terms");

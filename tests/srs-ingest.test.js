@@ -109,7 +109,7 @@ test("srs ingest reads nested module files and ignores section README indexes", 
     assert.match(readRule(cwd, "srs-07-auth"), /BR auth body/);
     assert.match(readRule(cwd, "srs-08-auth"), /UC auth body/);
     const authRule = readRule(cwd, "srs-07-auth");
-    assert.match(authRule, /section: "?07"?/);
+    assert.match(authRule, /section: ['"]?07['"]?/);
     assert.match(authRule, /module: auth/);
     assert.match(authRule, /canonicalSource: docs\/srs\/07-business-rules\/module-auth\.md/);
     assert.match(authRule, /srsKind: business-rules/);

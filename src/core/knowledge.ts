@@ -458,7 +458,7 @@ export function getKnowledgeById(
     }
   }
 
-  const base = toResult(rule, 0, ["id"], projectRoot, true, true);
+  const base = toResult(rule, 0, ["id"], projectRoot, true, resolvedFrom === "canonical");
   return {
     ...base,
     body,
