@@ -4,7 +4,8 @@ import fg from "fast-glob";
 import matter from "gray-matter";
 import type { HarnessConfig } from "./config";
 import { loadConfig, resolveProjectPath } from "./config-io";
-import { slugify, writeAtomic } from "./io";
+import { diffHashes, type HashEntry } from "./drift";
+import { sha256, slugify, warn, writeAtomic } from "./io";
 import {
   PRIORITY_ORDER,
   ruleFrontmatterSchema,
@@ -12,6 +13,12 @@ import {
   type Rule,
   type RuleFrontmatter,
 } from "./rule-schema";
+import type { HarnessState } from "./state-schema";
+
+export interface RuleFileDrift {
+  path: string;
+  kind: "stale";
+}
 
 function parseRuleFile(filePath: string, defaultTargets: string[]): Rule {
   const raw = fs.readFileSync(filePath, "utf8");
@@ -77,6 +84,7 @@ export function writeRule(
   id: string,
   frontmatter: RuleFrontmatter,
   body: string,
+  state?: HarnessState,
 ): string {
   const config = loadConfig(harnessDir);
   const rulesDir = resolveProjectPath(harnessDir, config.rulesDir);
@@ -89,8 +97,55 @@ export function writeRule(
     }
   }
   const content = matter.stringify(body, data);
+
+  if (state) {
+    const relPath = path.relative(path.dirname(harnessDir), filePath).replace(/\\/g, "/");
+    const known = state.rules[relPath];
+    if (known && fs.existsSync(filePath)) {
+      const onDisk = fs.readFileSync(filePath, "utf8");
+      if (sha256(onDisk) !== known.hash) {
+        warn(`Overwriting hand-edited rule file: ${relPath}`);
+      }
+    }
+    writeAtomic(filePath, content);
+    state.rules[relPath] = { hash: sha256(content), writtenAt: new Date().toISOString() };
+    return filePath;
+  }
+
   writeAtomic(filePath, content);
   return filePath;
+}
+
+/**
+ * Compares on-disk `.contextpilot/rules/*.md` files against the hashes
+ * recorded the last time each was written, so a hand-edit that a subsequent
+ * `srs ingest` is about to silently overwrite is visible beforehand.
+ */
+export function getRuleFileDrift(harnessDir: string, state: HarnessState): RuleFileDrift[] {
+  const config = loadConfig(harnessDir);
+  const rulesDir = resolveProjectPath(harnessDir, config.rulesDir);
+  const projectRoot = path.dirname(harnessDir);
+
+  const known: Record<string, HashEntry> = {};
+  for (const [relPath, entry] of Object.entries(state.rules)) {
+    known[relPath] = { hash: entry.hash, recordedAt: entry.writtenAt };
+  }
+
+  const current: Record<string, string | undefined> = {};
+  if (fs.existsSync(rulesDir)) {
+    for (const filePath of fg.sync("**/*.md", { cwd: rulesDir, absolute: true })) {
+      const relPath = path.relative(projectRoot, filePath).replace(/\\/g, "/");
+      current[relPath] = sha256(fs.readFileSync(filePath, "utf8"));
+    }
+  }
+
+  // Only rule files this process has previously written (tracked in state.rules) can
+  // meaningfully "drift" - rules written via other paths (add/adopt/scan/decision, which
+  // don't pass `state`) are never tracked here, so treating them as "new" would be a false
+  // positive, not a hand-edit warning.
+  return diffHashes(known, current)
+    .filter((d) => d.kind === "stale")
+    .map((d) => ({ path: d.path, kind: "stale" as const }));
 }
 
 export function ruleIdFromPath(filePath: string): string {

@@ -1,5 +1,23 @@
 ﻿# Changelog
 
+## 0.3.6 - Rule-file drift protection and stale decision scopes
+
+### Added
+
+- `.contextpilot/rules/*.md` files are now hash-tracked when written by `srs ingest`; a
+  hand-edit since the last write is detected and warned about instead of being silently
+  overwritten on the next reingest. Surfaced under `status --json`'s new `ruleDrift` field.
+- `status --json` now reports `staleDecisionScopes`: open or resolved decisions whose `--scope`
+  glob matches zero files on disk (a typo'd glob, or code that was since deleted/renamed).
+
+### Changed
+
+- Extracted a shared `diffHashes` helper (`src/core/drift.ts`) used by generated-file drift,
+  SRS source-file drift, and the new rule-file drift check, replacing three independent
+  hand-rolled implementations with one.
+- Documented in `orchestration.ts` that `allowedActions` on orchestration steps are role-scoping
+  hints, not an enforcement mechanism (`"edit"` is the only value ever mechanically checked).
+
 ## 0.3.5 - SRS drift visibility and checkpoint/orchestration linkage
 
 ### Added

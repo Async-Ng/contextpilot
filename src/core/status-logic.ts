@@ -1,9 +1,16 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { loadConfig, resolveProjectPath } from "./config-io";
-import { hasOpenDiscussion, listOpenDecisions, type Decision } from "./decisions";
+import {
+  getStaleDecisionScopes,
+  hasOpenDiscussion,
+  listOpenDecisions,
+  type Decision,
+  type StaleDecisionScope,
+} from "./decisions";
+import { diffHashes, type HashEntry } from "./drift";
 import { sha256File } from "./io";
-import { listRules } from "./rules";
+import { getRuleFileDrift, listRules, type RuleFileDrift } from "./rules";
 import { scanDiscoverItems } from "./discover";
 import {
   getOrchestrationSummary,
@@ -34,6 +41,8 @@ export interface StatusReport {
   orchestration: OrchestrationSummary;
   srs: SrsStatusReport;
   srsDrift: SrsFileDrift[];
+  ruleDrift: RuleFileDrift[];
+  staleDecisionScopes: StaleDecisionScope[];
 }
 
 export function computeStatus(harnessDir: string): StatusReport {
@@ -41,23 +50,26 @@ export function computeStatus(harnessDir: string): StatusReport {
   const state = loadState(harnessDir);
   const projectRoot = path.dirname(harnessDir);
 
-  const drift: StatusReport["drift"] = [];
   const missing: string[] = [];
+  const known: Record<string, HashEntry> = {};
+  const current: Record<string, string | undefined> = {};
 
   for (const [outputPath, entry] of Object.entries(state.generated)) {
+    known[outputPath] = { hash: entry.hash, recordedAt: entry.writtenAt };
     if (!fs.existsSync(outputPath)) {
       missing.push(outputPath);
       continue;
     }
-    const actualHash = sha256File(outputPath);
-    if (actualHash && actualHash !== entry.hash) {
-      drift.push({
-        path: outputPath,
-        expectedHash: entry.hash,
-        actualHash,
-      });
-    }
+    current[outputPath] = sha256File(outputPath) ?? undefined;
   }
+
+  const drift: StatusReport["drift"] = diffHashes(known, current)
+    .filter((d) => d.kind === "stale")
+    .map((d) => ({
+      path: d.path,
+      expectedHash: known[d.path]?.hash ?? "",
+      actualHash: current[d.path] ?? "",
+    }));
 
   const discoverItems = scanDiscoverItems(harnessDir);
   const newExternal = discoverItems
@@ -84,6 +96,8 @@ export function computeStatus(harnessDir: string): StatusReport {
   const orchestration = getOrchestrationSummary(harnessDir);
   const srs = getSrsStatus(harnessDir);
   const srsDrift = getSrsFileDrift(harnessDir);
+  const ruleDrift = getRuleFileDrift(harnessDir, state);
+  const staleDecisionScopes = getStaleDecisionScopes(harnessDir);
 
   return {
     drift,
@@ -96,6 +110,8 @@ export function computeStatus(harnessDir: string): StatusReport {
     orchestration,
     srs,
     srsDrift,
+    ruleDrift,
+    staleDecisionScopes,
   };
 }
 

@@ -47,6 +47,9 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+// `allowedActions` values are role-scoping hints shown to the agent (context.ts/status.ts
+// display text) - only `"edit"` is mechanically enforced (see gate.ts's single check on it).
+// Adding a new string here does not create an enforcement guarantee by itself.
 function builtInCodingSteps(): OrchestrationStep[] {
   return [
     {

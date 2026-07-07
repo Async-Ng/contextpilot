@@ -1,4 +1,6 @@
 import * as fs from "node:fs";
+import * as path from "node:path";
+import fg from "fast-glob";
 import { nanoid } from "nanoid";
 import { loadConfig, resolveProjectPath } from "./config-io";
 import { decisionSchema, type Decision } from "./decision-schema";
@@ -132,6 +134,32 @@ export async function rejectDecision(
       rejectedAt: new Date().toISOString(),
     })),
   );
+}
+
+export interface StaleDecisionScope {
+  id: string;
+  scope: string;
+}
+
+/**
+ * Flags decision scope globs that match zero files on disk - a typo'd glob,
+ * or a scope that was valid when the decision was opened/resolved but whose
+ * referenced code has since been deleted or renamed. Nothing else in the
+ * tool ever re-validates a decision's scope once it's written.
+ */
+export function getStaleDecisionScopes(harnessDir: string): StaleDecisionScope[] {
+  const projectRoot = path.dirname(harnessDir);
+  const stale: StaleDecisionScope[] = [];
+  for (const decision of readAllDecisions(harnessDir)) {
+    if (decision.status === "rejected") continue;
+    for (const scope of decision.scopes) {
+      const matches = fg.sync(scope, { cwd: projectRoot });
+      if (matches.length === 0) {
+        stale.push({ id: decision.id, scope });
+      }
+    }
+  }
+  return stale;
 }
 
 export { type Decision };

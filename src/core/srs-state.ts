@@ -4,6 +4,7 @@ import { loadConfig, resolveProjectPath } from "./config-io";
 import { getStateFilePath, loadState, saveState, type HarnessState } from "./state";
 import type { SrsState, SrsStatus } from "./state-schema";
 import { sha256, withLock } from "./io";
+import { diffHashes, type HashEntry } from "./drift";
 import { collectSrsSourceFiles } from "./srs-files";
 
 export interface SrsStatusReport {
@@ -84,17 +85,17 @@ export function getSrsFileDrift(harnessDir: string): SrsFileDrift[] {
 
   if (!fs.existsSync(srsDir)) return [];
 
-  const drift: SrsFileDrift[] = [];
-  const files = collectSrsSourceFiles(srsDir);
-  for (const file of files) {
+  const known: Record<string, HashEntry> = {};
+  for (const [relPath, entry] of Object.entries(state.srs.files)) {
+    known[relPath] = { hash: entry.hash, recordedAt: entry.ingestedAt };
+  }
+
+  const current: Record<string, string | undefined> = {};
+  for (const file of collectSrsSourceFiles(srsDir)) {
     const content = fs.readFileSync(file.fullPath, "utf8");
     const relPath = path.relative(projectRoot, file.fullPath).replace(/\\/g, "/");
-    const known = state.srs.files[relPath];
-    if (!known) {
-      drift.push({ path: relPath, kind: "new" });
-    } else if (known.hash !== sha256(content)) {
-      drift.push({ path: relPath, kind: "stale" });
-    }
+    current[relPath] = sha256(content);
   }
-  return drift;
+
+  return diffHashes(known, current).map((d) => ({ path: d.path, kind: d.kind as "stale" | "new" }));
 }

@@ -13,7 +13,9 @@ export function runStatus(): void {
     report.newSkills.length > 0 ||
     report.pending.length > 0 ||
     report.inDiscussion ||
-    report.srsDrift.length > 0;
+    report.srsDrift.length > 0 ||
+    report.ruleDrift.length > 0 ||
+    report.staleDecisionScopes.length > 0;
 
   const lines: string[] = [chalk.bold("ContextPilot status:")];
 
@@ -64,6 +66,19 @@ export function runStatus(): void {
       lines.push(`  ${d.kind === "new" ? "[new] " : "[stale] "}${d.path}`);
     }
     lines.push(`  -> run: contextpilot srs ingest --path ${report.srs.path} --reingest --json`);
+  }
+  if (report.ruleDrift.length > 0) {
+    lines.push(chalk.yellow(`Rule file drift (${report.ruleDrift.length}):`));
+    for (const d of report.ruleDrift) {
+      lines.push(`  [${d.kind}] ${d.path}`);
+    }
+    lines.push(`  -> these rule files were hand-edited since ContextPilot last wrote them; the next \`srs ingest\` will overwrite them.`);
+  }
+  if (report.staleDecisionScopes.length > 0) {
+    lines.push(chalk.yellow(`Stale decision scopes (${report.staleDecisionScopes.length}):`));
+    for (const s of report.staleDecisionScopes) {
+      lines.push(`  ${s.id}: scope "${s.scope}" matches no files`);
+    }
   }
   if (report.orchestration.activeRun) {
     const run = report.orchestration.activeRun;

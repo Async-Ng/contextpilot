@@ -139,6 +139,8 @@ export async function ingestSrs(
   const statePath = getStateFilePath(harnessDir);
 
   return withLock(statePath, () => {
+    const state = loadState(harnessDir);
+
     for (const file of files) {
       const sectionNum = file.sectionNum;
       const fullPath = file.fullPath;
@@ -181,7 +183,7 @@ export async function ingestSrs(
           scope,
           priority: "normal",
         });
-        writeRule(harnessDir, id, fm, content);
+        writeRule(harnessDir, id, fm, content, state);
         knowledgeUpserted++;
         continue;
       }
@@ -205,7 +207,7 @@ export async function ingestSrs(
             scope,
             priority: "normal",
           });
-          writeRule(harnessDir, id, fm, mod.body);
+          writeRule(harnessDir, id, fm, mod.body, state);
           knowledgeUpserted++;
         }
         continue;
@@ -221,7 +223,7 @@ export async function ingestSrs(
           scope: ["**/*"],
           priority,
         });
-        writeRule(harnessDir, id, fm, content);
+        writeRule(harnessDir, id, fm, content, state);
         knowledgeUpserted++;
       }
     }
@@ -231,7 +233,6 @@ export async function ingestSrs(
       autoResolved = autoResolveBySourceIds(harnessDir, presentSourceIds);
     }
 
-    const state = loadState(harnessDir);
     setSrsStateOnState(
       state,
       "ingested",
