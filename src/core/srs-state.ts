@@ -3,7 +3,8 @@ import * as path from "node:path";
 import { loadConfig, resolveProjectPath } from "./config-io";
 import { getStateFilePath, loadState, saveState, type HarnessState } from "./state";
 import type { SrsState, SrsStatus } from "./state-schema";
-import { withLock } from "./io";
+import { sha256, withLock } from "./io";
+import { collectSrsSourceFiles } from "./srs-files";
 
 export interface SrsStatusReport {
   status: SrsStatus | "unknown";
@@ -28,6 +29,7 @@ export function setSrsStateOnState(
     status,
     path: srsPath.replace(/\\/g, "/"),
     updatedAt: nowIso(),
+    files: state.srs.files,
   };
 }
 
@@ -61,4 +63,38 @@ export function getSrsStatus(harnessDir: string): SrsStatusReport {
     requiredForGreenfield: config.srs.requiredForGreenfield,
     bootstrapMode: config.srs.bootstrapMode,
   };
+}
+
+export interface SrsFileDrift {
+  path: string;
+  kind: "stale" | "new";
+}
+
+/**
+ * Compares the current on-disk SRS source files against the hashes recorded
+ * at last ingest, so stale/never-ingested files are visible without relying
+ * on an agent remembering to re-run `srs ingest --reingest` after every edit.
+ */
+export function getSrsFileDrift(harnessDir: string): SrsFileDrift[] {
+  const config = loadConfig(harnessDir);
+  const projectRoot = path.dirname(harnessDir);
+  const state = loadState(harnessDir);
+  const srsPath = state.srs.path ?? config.srs.bootstrapPath;
+  const srsDir = resolveProjectPath(harnessDir, srsPath);
+
+  if (!fs.existsSync(srsDir)) return [];
+
+  const drift: SrsFileDrift[] = [];
+  const files = collectSrsSourceFiles(srsDir);
+  for (const file of files) {
+    const content = fs.readFileSync(file.fullPath, "utf8");
+    const relPath = path.relative(projectRoot, file.fullPath).replace(/\\/g, "/");
+    const known = state.srs.files[relPath];
+    if (!known) {
+      drift.push({ path: relPath, kind: "new" });
+    } else if (known.hash !== sha256(content)) {
+      drift.push({ path: relPath, kind: "stale" });
+    }
+  }
+  return drift;
 }

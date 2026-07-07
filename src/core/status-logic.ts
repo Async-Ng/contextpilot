@@ -9,7 +9,7 @@ import {
   getOrchestrationSummary,
   type OrchestrationSummary,
 } from "./orchestration";
-import { getSrsStatus, type SrsStatusReport } from "./srs-state";
+import { getSrsFileDrift, getSrsStatus, type SrsFileDrift, type SrsStatusReport } from "./srs-state";
 import type { HarnessState } from "./state-schema";
 import { loadState } from "./state";
 
@@ -33,6 +33,7 @@ export interface StatusReport {
   openDecisions: Decision[];
   orchestration: OrchestrationSummary;
   srs: SrsStatusReport;
+  srsDrift: SrsFileDrift[];
 }
 
 export function computeStatus(harnessDir: string): StatusReport {
@@ -82,6 +83,7 @@ export function computeStatus(harnessDir: string): StatusReport {
   const inDiscussion = hasOpenDiscussion(harnessDir);
   const orchestration = getOrchestrationSummary(harnessDir);
   const srs = getSrsStatus(harnessDir);
+  const srsDrift = getSrsFileDrift(harnessDir);
 
   return {
     drift,
@@ -93,6 +95,7 @@ export function computeStatus(harnessDir: string): StatusReport {
     openDecisions,
     orchestration,
     srs,
+    srsDrift,
   };
 }
 

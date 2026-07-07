@@ -8,11 +8,17 @@ export const generatedEntrySchema = z.object({
 
 export const srsStatusSchema = z.enum(["missing", "bootstrapped", "ingested"]);
 
+export const srsFileEntrySchema = z.object({
+  hash: z.string(),
+  ingestedAt: z.string(),
+});
+
 export const srsStateSchema = z
   .object({
     status: srsStatusSchema.optional(),
     path: z.string().optional(),
     updatedAt: z.string().optional(),
+    files: z.record(srsFileEntrySchema).default({}),
   })
   .default({});
 
@@ -39,7 +45,8 @@ export type HarnessState = z.infer<typeof harnessStateSchema>;
 export type GeneratedEntry = z.infer<typeof generatedEntrySchema>;
 export type SrsStatus = z.infer<typeof srsStatusSchema>;
 export type SrsState = z.infer<typeof srsStateSchema>;
+export type SrsFileEntry = z.infer<typeof srsFileEntrySchema>;
 
 export function emptyState(): HarnessState {
-  return { generated: {}, adopted: {}, skills: {}, orchestration: {}, srs: {} };
+  return { generated: {}, adopted: {}, skills: {}, orchestration: {}, srs: { files: {} } };
 }

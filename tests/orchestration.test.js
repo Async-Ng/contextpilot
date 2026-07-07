@@ -149,6 +149,61 @@ test("gate denies file edits during non-edit orchestration step", () => {
   });
 });
 
+function readRuns(cwd) {
+  const runsFile = path.join(cwd, ".contextpilot", "orchestration", "runs.jsonl");
+  return fs
+    .readFileSync(runsFile, "utf8")
+    .split("\n")
+    .filter((l) => l.trim())
+    .map((l) => JSON.parse(l));
+}
+
+test("checkpoint auto-completes the run when at the final checkpoint step", () => {
+  withProject((cwd) => {
+    runJson(cwd, ["orchestrate", "start", "--goal", "Add refunds", "--scope", "src/**"]);
+    for (const _step of ["plan", "implement", "review", "verify"]) {
+      runJson(cwd, ["orchestrate", "advance", "--status", "complete", "--note", "done"]);
+    }
+    const statusBefore = runJson(cwd, ["orchestrate", "status"]);
+    assert.equal(statusBefore.json.orchestration.activeStep.id, "checkpoint");
+
+    const result = runJson(cwd, ["checkpoint"]);
+
+    assert.equal(result.code, 0);
+    assert.match(result.json.orchestrationNote, /completed automatically/);
+    assert.equal(result.json.orchestration.activeRun, undefined);
+
+    const statusAfter = runJson(cwd, ["orchestrate", "status"]);
+    assert.equal(statusAfter.json.orchestration.activeRun, undefined);
+
+    const runs = readRuns(cwd);
+    const lastRun = runs.at(-1);
+    assert.equal(lastRun.status, "completed");
+    assert.equal(
+      lastRun.steps.find((s) => s.id === "checkpoint").status,
+      "completed",
+    );
+  });
+});
+
+test("checkpoint warns instead of advancing when the run isn't at its checkpoint step", () => {
+  withProject((cwd) => {
+    runJson(cwd, ["orchestrate", "start", "--goal", "Add refunds", "--scope", "src/**"]);
+
+    const result = runJson(cwd, ["checkpoint"]);
+
+    assert.equal(result.code, 0);
+    assert.match(result.json.orchestrationNote, /not yet its final checkpoint step/);
+    assert.equal(result.json.orchestration.activeRun.status, "active");
+    assert.equal(result.json.orchestration.activeStep.id, "plan");
+
+    const runs = readRuns(cwd);
+    const lastRun = runs.at(-1);
+    assert.equal(lastRun.status, "active");
+    assert.equal(lastRun.activeStepId, "plan");
+  });
+});
+
 test("strict SRS bootstrap mode blocks business edits while allowing docs/srs", () => {
   withProject((cwd) => {
     const config = readConfig(cwd);

@@ -12,6 +12,7 @@ import {
   getOrchestrationSummary,
   type OrchestrationSummary,
 } from "../core/orchestration";
+import { getSrsFileDrift, type SrsFileDrift } from "../core/srs-state";
 
 /** Max learnings in session inject - keep hooks fast. */
 const INJECT_MAX_LEARNINGS = 10;
@@ -30,6 +31,7 @@ export interface ContextInjectPayload {
   learnings: ContextInjectLearning[];
   openDecisions: Decision[];
   orchestration: OrchestrationSummary;
+  srsDrift: SrsFileDrift[];
   text: string;
 }
 
@@ -84,6 +86,29 @@ function formatOrchestrationSection(summary: OrchestrationSummary): string {
     lines.push("", "This orchestration step is blocked; resolve the blocker before continuing.");
   }
 
+  if ((summary.staleHours ?? 0) > 24) {
+    lines.push(
+      "",
+      `Warning: no activity on this run in ${Math.floor(summary.staleHours ?? 0)}h - it may be abandoned. Resume it or cancel with \`contextpilot orchestrate cancel\`.`,
+    );
+  }
+
+  return lines.join("\n");
+}
+
+function formatSrsDriftSection(drift: SrsFileDrift[]): string {
+  if (drift.length === 0) {
+    return "";
+  }
+  const lines: string[] = [
+    "## SRS Source Drift - re-ingest before relying on this knowledge",
+    "",
+    "The following SRS source files are new or have changed since the last `srs ingest`:",
+  ];
+  for (const d of drift) {
+    lines.push(`- [${d.kind}] ${d.path}`);
+  }
+  lines.push("", "Run `contextpilot srs ingest --reingest --json` before relying on SRS knowledge for these files.");
   return lines.join("\n");
 }
 
@@ -92,6 +117,7 @@ function formatInjectText(
   learnings: Learning[],
   openDecisions: Decision[],
   orchestration: OrchestrationSummary,
+  srsDrift: SrsFileDrift[],
 ): string {
   const sections: string[] = ["# Harness Session Context", ""];
 
@@ -121,6 +147,11 @@ function formatInjectText(
     sections.push(decisionsText, "");
   }
 
+  const srsDriftText = formatSrsDriftSection(srsDrift);
+  if (srsDriftText) {
+    sections.push(srsDriftText, "");
+  }
+
   return sections.join("\n").trim();
 }
 
@@ -135,7 +166,8 @@ export function formatInjectPayload(harnessDir: string): ContextInjectPayload {
   const sorted = sortLearnings(readActiveLearnings(harnessDir)).slice(0, maxLearnings);
   const openDecisions = listOpenDecisions(harnessDir);
   const orchestration = getOrchestrationSummary(harnessDir);
-  const text = formatInjectText(focus, sorted, openDecisions, orchestration);
+  const srsDrift = getSrsFileDrift(harnessDir);
+  const text = formatInjectText(focus, sorted, openDecisions, orchestration, srsDrift);
 
   return {
     focus,
@@ -149,6 +181,7 @@ export function formatInjectPayload(harnessDir: string): ContextInjectPayload {
     })),
     openDecisions,
     orchestration,
+    srsDrift,
     text,
   };
 }
@@ -165,6 +198,7 @@ export function runContextInject(options: ContextInjectOptions = {}): void {
     learnings: payload.learnings,
     openDecisions: payload.openDecisions,
     orchestration: payload.orchestration,
+    srsDrift: payload.srsDrift,
     text: payload.text,
   });
   process.exit(EXIT_OK);

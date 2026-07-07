@@ -6,7 +6,9 @@
   requireHarness,
 } from "../core/io";
 import {
+  advanceRun,
   appendOrchestrationEvent,
+  getActiveStep,
   getOrchestrationSummary,
 } from "../core/orchestration";
 import { runSync } from "../core/sync";
@@ -23,11 +25,15 @@ export async function runCheckpoint(): Promise<void> {
 
   try {
     const result = await runSync(harnessDir, { allowDriftOverwrite: true });
-    const orchestration = getOrchestrationSummary(harnessDir);
-    if (orchestration.activeRun) {
+    let orchestration = getOrchestrationSummary(harnessDir);
+    let orchestrationNote: string | undefined;
+
+    if (orchestration.activeRun && orchestration.activeStep) {
+      const run = orchestration.activeRun;
+      const step = orchestration.activeStep;
       appendOrchestrationEvent(harnessDir, {
-        runId: orchestration.activeRun.id,
-        stepId: orchestration.activeStep?.id,
+        runId: run.id,
+        stepId: step.id,
         type: "checkpoint",
         message: `Checkpoint synced ${result.written.length} file(s).`,
         data: {
@@ -36,8 +42,36 @@ export async function runCheckpoint(): Promise<void> {
           warnings: result.warnings.length,
         },
       });
+
+      if (step.kind === "checkpoint") {
+        const updated = await advanceRun(harnessDir, {
+          status: "complete",
+          note: `Auto-completed by contextpilot checkpoint (synced ${result.written.length} file(s)).`,
+        });
+        orchestrationNote =
+          updated.status === "completed"
+            ? `Orchestration run ${updated.id} completed automatically.`
+            : `Orchestration run ${updated.id} advanced to its next step automatically.`;
+        orchestration = {
+          ...orchestration,
+          activeRunId: updated.status === "completed" ? undefined : updated.id,
+          activeRun: updated.status === "completed" ? undefined : updated,
+          activeStep: updated.status === "completed" ? undefined : getActiveStep(updated),
+        };
+      } else {
+        orchestrationNote =
+          `Active orchestration run ${run.id} is at step "${step.title}" (not yet its final checkpoint step) - ` +
+          `this checkpoint synced knowledge but did not advance the run. Call ` +
+          `\`contextpilot orchestrate advance --status complete --note "<evidence>" --json\` for the current step when it's actually done.`;
+      }
     }
-    out(`${CHECKPOINT_NUDGE}\nSynced ${result.written.length} file(s).`, {
+
+    const humanLines = [`${CHECKPOINT_NUDGE}\nSynced ${result.written.length} file(s).`];
+    if (orchestrationNote) {
+      humanLines.push(orchestrationNote);
+    }
+
+    out(humanLines.join("\n"), {
       status: "checkpoint",
       synced: true,
       nudge: CHECKPOINT_NUDGE,
@@ -45,6 +79,7 @@ export async function runCheckpoint(): Promise<void> {
       skipped: result.skipped,
       warnings: result.warnings,
       orchestration,
+      orchestrationNote,
     });
     process.exit(EXIT_OK);
   } catch (error: unknown) {

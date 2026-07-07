@@ -1,5 +1,23 @@
 ﻿# Changelog
 
+## 0.3.5 - SRS drift visibility and checkpoint/orchestration linkage
+
+### Added
+
+- Per-file SRS source hash tracking on ingest; `status --json` and `context --inject` now
+  report stale/never-ingested SRS files under `srsDrift` instead of silently serving outdated
+  knowledge.
+- `contextpilot checkpoint` now completes the active orchestration run automatically when its
+  current step is the final `checkpoint` step, and otherwise emits an explicit warning instead
+  of silently leaving the run active.
+- `staleHours` on the orchestration summary, surfaced as a warning in `status` when an active
+  run has had no activity for over 24 hours.
+
+### Changed
+
+- ContextPilot Protocol text updated to describe the reingest-after-edit requirement and the
+  checkpoint auto-complete behavior, shared identically across all agent adapters.
+
 ## 0.3.4 - Greenfield SRS bootstrap
 
 ### Added

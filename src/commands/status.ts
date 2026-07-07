@@ -12,7 +12,8 @@ export function runStatus(): void {
     report.newExternal.length > 0 ||
     report.newSkills.length > 0 ||
     report.pending.length > 0 ||
-    report.inDiscussion;
+    report.inDiscussion ||
+    report.srsDrift.length > 0;
 
   const lines: string[] = [chalk.bold("ContextPilot status:")];
 
@@ -57,12 +58,26 @@ export function runStatus(): void {
   } else if (report.srs.status === "bootstrapped") {
     lines.push(chalk.cyan(`SRS bootstrapped: write SRS in ${report.srs.path}, then run srs ingest.`));
   }
+  if (report.srsDrift.length > 0) {
+    lines.push(chalk.yellow(`SRS source drift (${report.srsDrift.length}):`));
+    for (const d of report.srsDrift) {
+      lines.push(`  ${d.kind === "new" ? "[new] " : "[stale] "}${d.path}`);
+    }
+    lines.push(`  -> run: contextpilot srs ingest --path ${report.srs.path} --reingest --json`);
+  }
   if (report.orchestration.activeRun) {
     const run = report.orchestration.activeRun;
     const step = report.orchestration.activeStep;
     lines.push(chalk.cyan(`Active orchestration: ${run.id}`));
     lines.push(`  Goal: ${run.goal}`);
     lines.push(`  Step: ${step ? `${step.id} (${step.role})` : "none"}`);
+    if ((report.orchestration.staleHours ?? 0) > 24) {
+      lines.push(
+        chalk.yellow(
+          `  Warning: no activity in ${Math.floor(report.orchestration.staleHours ?? 0)}h - run may be abandoned. Resume it or cancel with \`contextpilot orchestrate cancel\`.`,
+        ),
+      );
+    }
   }
   if (!hasIssues && !report.orchestration.activeRun) {
     lines.push(chalk.green("All clean."));

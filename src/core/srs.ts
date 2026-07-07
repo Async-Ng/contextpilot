@@ -1,22 +1,13 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { loadConfig, resolveProjectPath } from "./config-io";
-import { slugify, warn, withLock } from "./io";
+import { sha256, slugify, warn, withLock } from "./io";
 import { appendLearning, autoResolveBySourceIds } from "./memory";
 import { defaultFrontmatter, writeRule } from "./rules";
 import { getStateFilePath, loadState, saveState } from "./state";
 import { setSrsStateOnState } from "./srs-state";
-
-const MODULE_SECTIONS = new Set(["03", "06", "07", "08"]);
-const GLOBAL_SECTIONS = new Set(["01", "02", "04", "05", "09", "10", "11"]);
-const APPENDIX_SECTION = "12";
-
-const MODULE_REGEX = /^## Module: (.+)$/gm;
-
-function parseSectionNumber(filename: string): string | null {
-  const match = /^(\d{2})-/.exec(path.basename(filename));
-  return match?.[1] ?? null;
-}
+import type { SrsFileEntry } from "./state-schema";
+import { collectSrsSourceFiles, GLOBAL_SECTIONS } from "./srs-files";
 
 function moduleNameFromFile(filePath: string, content: string): string {
   const heading = content.match(/^# .*?Module:\s*(.+)$/m);
@@ -52,53 +43,6 @@ function extractModules(content: string): Array<{ name: string; body: string }> 
     modules.push({ name, body });
   }
   return modules;
-}
-
-interface SrsSourceFile {
-  sectionNum: string;
-  fullPath: string;
-  mode: "global" | "legacy-module" | "nested-module" | "appendix";
-}
-
-function collectSrsSourceFiles(dir: string): SrsSourceFile[] {
-  const files: SrsSourceFile[] = [];
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
-
-  for (const entry of entries) {
-    const fullPath = path.join(dir, entry.name);
-    if (entry.isFile() && /^\d{2}-.*\.md$/.test(entry.name)) {
-      const sectionNum = parseSectionNumber(entry.name);
-      if (!sectionNum) continue;
-      files.push({
-        sectionNum,
-        fullPath,
-        mode: sectionNum === APPENDIX_SECTION
-          ? "appendix"
-          : MODULE_SECTIONS.has(sectionNum)
-            ? "legacy-module"
-            : "global",
-      });
-      continue;
-    }
-
-    if (!entry.isDirectory()) continue;
-    const sectionNum = parseSectionNumber(entry.name);
-    if (!sectionNum || !MODULE_SECTIONS.has(sectionNum)) continue;
-
-    const moduleFiles = fs
-      .readdirSync(fullPath)
-      .filter((f) => /^module-.+\.md$/.test(f))
-      .sort();
-    for (const moduleFile of moduleFiles) {
-      files.push({
-        sectionNum,
-        fullPath: path.join(fullPath, moduleFile),
-        mode: "nested-module",
-      });
-    }
-  }
-
-  return files.sort((a, b) => a.fullPath.localeCompare(b.fullPath));
 }
 
 function parseAppendixLearnings(
@@ -189,6 +133,8 @@ export async function ingestSrs(
   let knowledgeUpserted = 0;
   let learningsSeeded = 0;
   const presentSourceIds = new Set<string>();
+  const fileHashes: Record<string, SrsFileEntry> = {};
+  const ingestedAt = new Date().toISOString();
 
   const statePath = getStateFilePath(harnessDir);
 
@@ -197,6 +143,8 @@ export async function ingestSrs(
       const sectionNum = file.sectionNum;
       const fullPath = file.fullPath;
       const content = fs.readFileSync(fullPath, "utf8");
+      const relPath = path.relative(projectRoot, fullPath).replace(/\\/g, "/");
+      fileHashes[relPath] = { hash: sha256(content), ingestedAt };
 
       if (file.mode === "appendix") {
         const appendixItems = parseAppendixLearnings(content, config.srs.moduleMap);
@@ -289,6 +237,7 @@ export async function ingestSrs(
       "ingested",
       path.relative(projectRoot, dir).replace(/\\/g, "/"),
     );
+    state.srs.files = fileHashes;
     saveState(harnessDir, state);
 
     return { knowledgeUpserted, learningsSeeded, autoResolved };

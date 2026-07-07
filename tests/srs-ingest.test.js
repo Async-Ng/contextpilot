@@ -356,6 +356,68 @@ test("sync warns when a generated main agent file exceeds the configured size bu
   });
 });
 
+test("status reports no SRS drift right after ingest, then flags stale and new files", () => {
+  withTempProject((cwd) => {
+    runJson(cwd, ["setup", "--no-git"]);
+    writeFile(
+      cwd,
+      "docs/srs/03-functional-requirements/module-auth.md",
+      "# Section 3: Functional Requirements - Module: Auth\n\nOriginal auth body\n",
+    );
+    runJson(cwd, ["srs", "ingest", "--path", "docs/srs"]);
+
+    const clean = runJson(cwd, ["status"]);
+    assert.deepEqual(clean.json.srsDrift, []);
+
+    writeFile(
+      cwd,
+      "docs/srs/03-functional-requirements/module-auth.md",
+      "# Section 3: Functional Requirements - Module: Auth\n\nEdited auth body\n",
+    );
+    writeFile(
+      cwd,
+      "docs/srs/03-functional-requirements/module-billing.md",
+      "# Section 3: Functional Requirements - Module: Billing\n\nNew billing body\n",
+    );
+
+    const dirty = runJson(cwd, ["status"]);
+    const byPath = Object.fromEntries(dirty.json.srsDrift.map((d) => [d.path, d.kind]));
+    assert.equal(byPath["docs/srs/03-functional-requirements/module-auth.md"], "stale");
+    assert.equal(byPath["docs/srs/03-functional-requirements/module-billing.md"], "new");
+
+    const reingest = runJson(cwd, ["srs", "ingest", "--path", "docs/srs", "--reingest"]);
+    assert.equal(reingest.code, 0);
+
+    const afterReingest = runJson(cwd, ["status"]);
+    assert.deepEqual(afterReingest.json.srsDrift, []);
+  });
+});
+
+test("context --inject surfaces SRS drift so agents don't need to remember reingest", () => {
+  withTempProject((cwd) => {
+    runJson(cwd, ["setup", "--no-git"]);
+    writeFile(
+      cwd,
+      "docs/srs/03-functional-requirements/module-auth.md",
+      "# Section 3: Functional Requirements - Module: Auth\n\nOriginal auth body\n",
+    );
+    runJson(cwd, ["srs", "ingest", "--path", "docs/srs"]);
+    writeFile(
+      cwd,
+      "docs/srs/03-functional-requirements/module-auth.md",
+      "# Section 3: Functional Requirements - Module: Auth\n\nEdited auth body\n",
+    );
+
+    const result = runJson(cwd, ["context", "--inject"]);
+
+    assert.equal(result.code, 0);
+    assert.match(result.json.text, /SRS Source Drift/);
+    assert.match(result.json.text, /stale.*module-auth\.md/);
+    assert.equal(result.json.srsDrift.length, 1);
+    assert.equal(result.json.srsDrift[0].kind, "stale");
+  });
+});
+
 test("fullstack-to-srs docs describe module files instead of a single section 8 append file", () => {
   const skillDir = path.join(__dirname, "..", "assets", "skills", "fullstack-to-srs");
   const combined = [

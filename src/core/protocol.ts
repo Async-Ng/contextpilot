@@ -38,7 +38,16 @@ export const HARNESS_PROTOCOL = `## ContextPilot Protocol - invisible to the use
 - If the user asks for an SRS, run \`contextpilot srs install --json\` if needed, read
   \`.contextpilot/skills/fullstack-to-srs/SKILL.md\`, follow that skill, write the SRS to
   \`docs/srs/\`, then run \`contextpilot srs ingest --path docs/srs --reingest --json\`.
+- Whenever you edit any file under the ingested SRS path (not only when writing a brand-new
+  SRS), immediately run \`contextpilot srs ingest --path <path> --reingest --json\` before
+  finishing the task. \`status --json\` and \`context --inject\` list stale/never-ingested SRS
+  files under "srsDrift" if you forget - treat any non-empty "srsDrift" as a required-before-done
+  item, not an FYI.
 - At the end of a task or a logical checkpoint, run: \`contextpilot checkpoint --json\`
-  (or \`contextpilot sync --json\`).
+  (or \`contextpilot sync --json\`). If you have an Active Orchestration run and its current step
+  is the final "checkpoint" step, running \`checkpoint\` also completes that step and the run
+  automatically - you do not need a separate \`orchestrate advance\` call in that case. If the run
+  is at an earlier step, \`checkpoint\` will not advance it and the output will say so; call
+  \`orchestrate advance\` for that step once it is actually done.
 - Do NOT run \`contextpilot forget\`, \`discover\`, \`add\`, or pass \`--force\`. Those need a
   human. Ask the user only when one of those commands is truly required.`;

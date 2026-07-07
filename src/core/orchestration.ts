@@ -40,6 +40,7 @@ export interface OrchestrationSummary {
   activeStep?: OrchestrationStep;
   blocked: boolean;
   latestEventAt?: string;
+  staleHours?: number;
 }
 
 function nowIso(): string {
@@ -211,13 +212,19 @@ export function getOrchestrationSummary(harnessDir: string): OrchestrationSummar
   const activeRunId = state.orchestration.activeRunId;
   const activeRun = activeRunId ? getRunById(harnessDir, activeRunId) : undefined;
   const activeStep = activeRun ? getActiveStep(activeRun) : undefined;
+  const lastEventAt = activeRun ? latestEventAt(harnessDir, activeRun.id) : undefined;
+  const referenceTime = lastEventAt ?? activeRun?.updatedAt;
+  const staleHours = activeRun && referenceTime
+    ? (Date.now() - new Date(referenceTime).getTime()) / (1000 * 60 * 60)
+    : undefined;
   return {
     enabled: true,
     activeRunId,
     activeRun,
     activeStep,
     blocked: activeRun?.status === "blocked" || activeStep?.status === "blocked",
-    latestEventAt: activeRun ? latestEventAt(harnessDir, activeRun.id) : undefined,
+    latestEventAt: lastEventAt,
+    staleHours,
   };
 }
 
