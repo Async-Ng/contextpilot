@@ -4,6 +4,7 @@ import { loadConfig, resolveProjectPath } from "./config-io";
 import { sha256, slugify, warn, withLock } from "./io";
 import { appendLearning, autoResolveBySourceIds } from "./memory";
 import { defaultFrontmatter, writeRule } from "./rules";
+import type { Priority, SrsKind } from "./rule-schema";
 import { getStateFilePath, loadState, saveState } from "./state";
 import { setSrsStateOnState } from "./srs-state";
 import type { SrsFileEntry } from "./state-schema";
@@ -13,6 +14,44 @@ import { collectSrsSourceFiles, GLOBAL_SECTIONS } from "./srs-files";
 // historical "this was removed" note (rather than deleted outright) starts its body with this
 // heading, so ingest can tag it instead of treating it as ordinary active knowledge.
 const REMOVED_MODULE_MARKER = /^##\s+Module Removed\b/m;
+
+function srsKindForSection(sectionNum: string): SrsKind {
+  switch (sectionNum) {
+    case "03":
+      return "functional-requirements";
+    case "06":
+      return "data-requirements";
+    case "07":
+      return "business-rules";
+    case "08":
+      return "user-stories";
+    default:
+      return "global";
+  }
+}
+
+function defaultPriorityForSection(sectionNum: string, isRemoved: boolean): Priority {
+  if (isRemoved) return "low";
+  switch (sectionNum) {
+    case "07":
+      return "high";
+    case "08":
+    case "01":
+    case "02":
+      return "low";
+    case "09":
+    case "10":
+      return "high";
+    default:
+      return "normal";
+  }
+}
+
+function srsTagsForSection(sectionNum: string, isRemoved: boolean): string[] {
+  const tags: string[] = [`srs-${sectionNum}`];
+  if (isRemoved) tags.push("removed");
+  return tags;
+}
 
 function moduleNameFromFile(filePath: string, content: string): string {
   const heading = content.match(/^# .*?Module:\s*(.+)$/m);
@@ -187,8 +226,12 @@ export async function ingestSrs(
           title: `SRS ${sectionNum}: ${moduleName}`,
           type: "knowledge",
           scope,
-          priority: isRemoved ? "low" : "normal",
-          tags: isRemoved ? ["removed"] : [],
+          priority: defaultPriorityForSection(sectionNum, isRemoved),
+          tags: srsTagsForSection(sectionNum, isRemoved),
+          section: sectionNum,
+          module: moduleSlug,
+          canonicalSource: relPath,
+          srsKind: srsKindForSection(sectionNum),
         });
         writeRule(harnessDir, id, fm, content, state);
         knowledgeUpserted++;
@@ -213,8 +256,12 @@ export async function ingestSrs(
             title: `SRS ${sectionNum}: ${mod.name}`,
             type: "knowledge",
             scope,
-            priority: isRemoved ? "low" : "normal",
-            tags: isRemoved ? ["removed"] : [],
+            priority: defaultPriorityForSection(sectionNum, isRemoved),
+            tags: srsTagsForSection(sectionNum, isRemoved),
+            section: sectionNum,
+            module: moduleSlug,
+            canonicalSource: relPath,
+            srsKind: srsKindForSection(sectionNum),
           });
           writeRule(harnessDir, id, fm, mod.body, state);
           knowledgeUpserted++;
@@ -224,13 +271,16 @@ export async function ingestSrs(
 
       if (file.mode === "global" && GLOBAL_SECTIONS.has(sectionNum)) {
         const id = `srs-${sectionNum}`;
-        const priority = sectionNum === "01" || sectionNum === "02" ? "low" : "normal";
         const fm = defaultFrontmatter(config, {
           id,
           title: `SRS Section ${sectionNum}`,
           type: "knowledge",
           scope: ["**/*"],
-          priority,
+          priority: defaultPriorityForSection(sectionNum, false),
+          tags: srsTagsForSection(sectionNum, false),
+          section: sectionNum,
+          canonicalSource: relPath,
+          srsKind: "global",
         });
         writeRule(harnessDir, id, fm, content, state);
         knowledgeUpserted++;

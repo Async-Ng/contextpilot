@@ -124,6 +124,51 @@ test("context inject includes active orchestration details", () => {
   });
 });
 
+test("context inject suggests knowledge for orchestration scope", () => {
+  withProject((cwd) => {
+    const rulesDir = path.join(cwd, ".contextpilot", "rules");
+    fs.mkdirSync(rulesDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(rulesDir, "srs-03-refunds.md"),
+      [
+        "---",
+        "id: srs-03-refunds",
+        'title: "SRS 03: Refunds"',
+        "type: knowledge",
+        "priority: high",
+        "section: \"03\"",
+        "module: refunds",
+        "scope:",
+        "  - src/**",
+        "targets:",
+        "  - claude",
+        "  - cursor",
+        "  - codex",
+        "---",
+        "",
+        "Refund requirements for orchestration scope matching.",
+      ].join("\n"),
+      "utf8",
+    );
+
+    runJson(cwd, [
+      "orchestrate",
+      "start",
+      "--goal",
+      "Add refunds",
+      "--scope",
+      "src/**",
+    ]);
+    const result = runJson(cwd, ["context", "--inject"]);
+
+    assert.equal(result.code, 0);
+    assert.ok(result.json.suggestedKnowledge.length > 0);
+    assert.equal(result.json.suggestedKnowledge[0].id, "srs-03-refunds");
+    assert.match(result.json.text, /Suggested Knowledge/);
+    assert.match(result.json.suggestedKnowledge[0].hint, /knowledge show/);
+  });
+});
+
 test("gate denies file edits during non-edit orchestration step", () => {
   withProject((cwd) => {
     runJson(cwd, [

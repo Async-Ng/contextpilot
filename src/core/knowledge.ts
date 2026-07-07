@@ -1,8 +1,14 @@
+import * as fs from "node:fs";
 import * as path from "node:path";
 import { loadConfig } from "./config-io";
 import { matchesGlob } from "./gate";
+import { sha256, warn } from "./io";
+import { resolveReadPolicy } from "./knowledge-policy";
 import { listRules, sortRules, type Rule } from "./rules";
 import { PRIORITY_ORDER } from "./rule-schema";
+import { loadState } from "./state";
+
+export type KnowledgeTask = "code" | "data" | "test" | "explore";
 
 export interface KnowledgeQueryOptions {
   query?: string;
@@ -11,6 +17,11 @@ export interface KnowledgeQueryOptions {
   target?: string;
   limit?: number;
   includeBody?: boolean;
+  sections?: string[];
+  modules?: string[];
+  task?: KnowledgeTask;
+  groupByModule?: boolean;
+  preferCanonical?: boolean;
 }
 
 export interface KnowledgeResult {
@@ -25,7 +36,13 @@ export interface KnowledgeResult {
   reasons: string[];
   source: string;
   excerpt: string;
+  section?: string;
+  module?: string;
+  canonicalSource?: string;
+  readPolicy: string;
+  deliveryHint: string;
   body?: string;
+  resolvedFrom?: "canonical" | "rule";
 }
 
 export interface KnowledgeQueryResult {
@@ -34,8 +51,18 @@ export interface KnowledgeQueryResult {
   scopes: string[];
   target: string | null;
   limit: number;
+  task: KnowledgeTask | null;
+  sections: string[];
+  modules: string[];
   results: KnowledgeResult[];
 }
+
+const TASK_SECTION_PRIORITY: Record<KnowledgeTask, string[]> = {
+  code: ["07", "03"],
+  data: ["06", "07"],
+  test: ["08", "11"],
+  explore: ["03", "07"],
+};
 
 function projectRootFromHarness(harnessDir: string): string {
   return path.dirname(harnessDir);
@@ -93,6 +120,7 @@ function scoreText(rule: Rule, query: string | undefined, reasons: string[]): nu
   const id = normalizeText(rule.id);
   const tags = rule.tags.map(normalizeText);
   const body = normalizeText(rule.body);
+  const moduleName = normalizeText(rule.module ?? "");
 
   for (const token of queryTokens) {
     let matched = false;
@@ -105,6 +133,11 @@ function scoreText(rule: Rule, query: string | undefined, reasons: string[]): nu
       score += 25;
       matched = true;
       reasons.push(`id:${token}`);
+    }
+    if (moduleName.includes(token)) {
+      score += 22;
+      matched = true;
+      reasons.push(`module:${token}`);
     }
     if (tags.some((tag) => tag.includes(token))) {
       score += 20;
@@ -173,6 +206,14 @@ function scoreScope(
   return score;
 }
 
+function taskSectionBonus(rule: Rule, task: KnowledgeTask | undefined): number {
+  if (!task || !rule.section) return 0;
+  const priority = TASK_SECTION_PRIORITY[task];
+  const index = priority.indexOf(rule.section);
+  if (index < 0) return 0;
+  return (priority.length - index) * 10;
+}
+
 function priorityBonus(rule: Rule): number {
   switch (rule.priority) {
     case "high":
@@ -184,13 +225,67 @@ function priorityBonus(rule: Rule): number {
   }
 }
 
+function matchesSectionFilter(rule: Rule, sections: string[]): boolean {
+  if (sections.length === 0) return true;
+  if (!rule.section) return true;
+  return sections.includes(rule.section);
+}
+
+function matchesModuleFilter(rule: Rule, modules: string[]): boolean {
+  if (modules.length === 0) return true;
+  if (!rule.module) return true;
+  return modules.some(
+    (m) => rule.module === m || rule.module?.includes(m) || m.includes(rule.module ?? ""),
+  );
+}
+
+function groupResultsByModuleSection(results: KnowledgeResult[]): KnowledgeResult[] {
+  const seen = new Set<string>();
+  const grouped: KnowledgeResult[] = [];
+  for (const result of results) {
+    const key = `${result.section ?? "_"}:${result.module ?? result.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    grouped.push(result);
+  }
+  return grouped;
+}
+
+function applyReadPolicy(
+  harnessDir: string,
+  results: KnowledgeResult[],
+  options: { files?: string[]; target?: string },
+): KnowledgeResult[] {
+  if (results.length === 0) {
+    return results;
+  }
+  const config = loadConfig(harnessDir);
+  const policy = resolveReadPolicy(
+    options.target,
+    options.files?.[0],
+    results,
+    { knowledgeMode: config.agentContext.knowledgeMode },
+  );
+  return results.map((result) => ({
+    ...result,
+    readPolicy: policy.policy,
+    deliveryHint: policy.hint,
+  }));
+}
+
 function toResult(
   rule: Rule,
   score: number,
   reasons: string[],
   projectRoot: string,
   includeBody: boolean,
+  preferCanonical: boolean,
 ): KnowledgeResult {
+  const ruleSource = sourcePath(projectRoot, rule.filePath);
+  const canonical = rule.canonicalSource;
+  const source =
+    preferCanonical && canonical ? canonical.replace(/\\/g, "/") : ruleSource;
+
   return {
     id: rule.id,
     title: rule.title,
@@ -201,10 +296,32 @@ function toResult(
     tags: rule.tags,
     score,
     reasons: [...new Set(reasons)],
-    source: sourcePath(projectRoot, rule.filePath),
+    source,
     excerpt: excerpt(rule.body),
+    section: rule.section,
+    module: rule.module,
+    canonicalSource: canonical,
+    readPolicy: "on-demand",
+    deliveryHint: `Use \`contextpilot knowledge show ${rule.id}\` for full body`,
     ...(includeBody ? { body: rule.body } : {}),
   };
+}
+
+function resolveDefaultSections(
+  options: KnowledgeQueryOptions,
+  configSections: string[],
+  isRelevantQuery: boolean,
+): string[] {
+  if (options.sections && options.sections.length > 0) {
+    return options.sections;
+  }
+  if (!isRelevantQuery) {
+    return [];
+  }
+  if (options.task) {
+    return TASK_SECTION_PRIORITY[options.task];
+  }
+  return configSections;
 }
 
 export function queryKnowledge(
@@ -217,25 +334,46 @@ export function queryKnowledge(
     normalizeRelativePath(projectRoot, file),
   );
   const scopes = options.scopes ?? [];
-  const limit = options.limit ?? 10;
+  const isRelevantQuery = files.length > 0 || scopes.length > 0;
+  const task = options.task ?? (isRelevantQuery ? "code" : undefined);
+  const sections = resolveDefaultSections(
+    options,
+    config.agentContext.relevantDefaultSections,
+    isRelevantQuery,
+  );
+  const modules = options.modules ?? [];
+  const limit = options.limit ?? (isRelevantQuery ? config.agentContext.relevantDefaultLimit : 10);
+  const groupByModule = options.groupByModule ?? (isRelevantQuery && config.agentContext.relevantGroupByModule);
+  const preferCanonical = options.preferCanonical ?? true;
+
   const candidates = listRules(harnessDir).filter(
     (rule) =>
       rule.type === "knowledge" &&
-      targetMatches(rule, options.target, config.agents),
+      targetMatches(rule, options.target, config.agents) &&
+      matchesSectionFilter(rule, sections) &&
+      matchesModuleFilter(rule, modules),
   );
 
-  const results = candidates
+  let results = candidates
     .map((rule) => {
       const reasons: string[] = [];
       const matchScore =
         scoreScope(rule, files, scopes, projectRoot, reasons) +
-        scoreText(rule, options.query, reasons);
+        scoreText(rule, options.query, reasons) +
+        taskSectionBonus(rule, task);
       const hasCriteria =
         Boolean(options.query?.trim()) || files.length > 0 || scopes.length > 0;
       const score = matchScore > 0 || !hasCriteria
         ? matchScore + priorityBonus(rule)
         : matchScore;
-      return toResult(rule, score, reasons, projectRoot, options.includeBody ?? false);
+      return toResult(
+        rule,
+        score,
+        reasons,
+        projectRoot,
+        options.includeBody ?? false,
+        preferCanonical,
+      );
     })
     .filter((result) => result.score > 0 || (!options.query && files.length === 0 && scopes.length === 0))
     .sort((a, b) => {
@@ -245,8 +383,13 @@ export function queryKnowledge(
         PRIORITY_ORDER[b.priority as keyof typeof PRIORITY_ORDER];
       if (priorityDiff !== 0) return priorityDiff;
       return a.id.localeCompare(b.id);
-    })
-    .slice(0, limit);
+    });
+
+  if (groupByModule) {
+    results = groupResultsByModuleSection(results);
+  }
+
+  const limited = results.slice(0, limit);
 
   return {
     query: options.query ?? null,
@@ -254,14 +397,40 @@ export function queryKnowledge(
     scopes,
     target: options.target ?? null,
     limit,
-    results,
+    task: task ?? null,
+    sections,
+    modules,
+    results: applyReadPolicy(harnessDir, limited, {
+      files,
+      target: options.target,
+    }),
   };
+}
+
+function canonicalHashMatches(
+  harnessDir: string,
+  canonicalPath: string,
+): boolean {
+  const state = loadState(harnessDir);
+  const normalized = canonicalPath.replace(/\\/g, "/");
+  const entry = state.srs.files?.[normalized];
+  if (!entry) return false;
+  const projectRoot = projectRootFromHarness(harnessDir);
+  const fullPath = path.join(projectRoot, normalized);
+  if (!fs.existsSync(fullPath)) return false;
+  const onDisk = fs.readFileSync(fullPath, "utf8");
+  return sha256(onDisk) === entry.hash;
+}
+
+export interface KnowledgeShowResult extends KnowledgeResult {
+  resolvedFrom: "canonical" | "rule";
+  driftWarning?: string;
 }
 
 export function getKnowledgeById(
   harnessDir: string,
   id: string,
-): KnowledgeResult | null {
+): KnowledgeShowResult | null {
   const projectRoot = projectRootFromHarness(harnessDir);
   const rule = sortRules(listRules(harnessDir)).find(
     (candidate) => candidate.type === "knowledge" && candidate.id === id,
@@ -269,5 +438,35 @@ export function getKnowledgeById(
   if (!rule) {
     return null;
   }
-  return toResult(rule, 0, ["id"], projectRoot, true);
+
+  let body = rule.body;
+  let resolvedFrom: "canonical" | "rule" = "rule";
+  let driftWarning: string | undefined;
+
+  if (rule.canonicalSource) {
+    const canonicalPath = path.join(projectRoot, rule.canonicalSource);
+    if (fs.existsSync(canonicalPath)) {
+      if (canonicalHashMatches(harnessDir, rule.canonicalSource)) {
+        body = fs.readFileSync(canonicalPath, "utf8").trim();
+        resolvedFrom = "canonical";
+      } else {
+        const message =
+          `Canonical source drift for ${id}: ${rule.canonicalSource} hash does not match ingested SRS state; using rule body.`;
+        warn(message);
+        driftWarning = message;
+      }
+    }
+  }
+
+  const base = toResult(rule, 0, ["id"], projectRoot, true, true);
+  return {
+    ...base,
+    body,
+    source:
+      resolvedFrom === "canonical"
+        ? rule.canonicalSource!.replace(/\\/g, "/")
+        : base.source,
+    resolvedFrom,
+    ...(driftWarning ? { driftWarning } : {}),
+  };
 }

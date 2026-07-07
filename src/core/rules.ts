@@ -37,6 +37,10 @@ function parseRuleFile(filePath: string, defaultTargets: string[]): Rule {
     priority: fm.priority ?? "normal",
     tags: fm.tags ?? [],
     origin: fm.origin,
+    section: fm.section,
+    module: fm.module,
+    canonicalSource: fm.canonicalSource,
+    srsKind: fm.srsKind,
     body: parsed.content.trim(),
   };
 }
@@ -188,6 +192,10 @@ export function defaultFrontmatter(
     priority: (overrides.priority ?? "normal") as Priority,
     tags: overrides.tags ?? [],
     origin: overrides.origin,
+    section: overrides.section,
+    module: overrides.module,
+    canonicalSource: overrides.canonicalSource,
+    srsKind: overrides.srsKind,
   };
 }
 

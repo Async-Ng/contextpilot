@@ -194,7 +194,47 @@ Project settings live in `.contextpilot/harness.config.json`. The most commonly 
   edits denied while SRS status is `missing`; `docs/srs/**` edits stay allowed).
 - `agentContext.knowledgeMode`: `"manifest"` (default for single-file agents — points at
   `.contextpilot/context/knowledge-index.md` instead of inlining SRS bodies) or `"inline"`.
+- `agentContext.globalKnowledgePolicy`: `"summary"` (default — compact SRS tables in agent files;
+  full text via `knowledge show`) or `"full"` / `"index-only"`.
+- `agentContext.listKnowledgeInMainFile`: `"compact"` (default — no 50-line knowledge list),
+  `"full"` (legacy list), or `"none"`.
+- `agentContext.relevantDefaultSections`: default `["07", "03"]` for `knowledge relevant`.
+- `agentContext.relevantDefaultLimit`: default `2` results per relevant query.
 - `discover.paths`: override where ContextPilot looks for pre-existing global agent config.
+
+### Knowledge workflow (v0.4+)
+
+Agent instruction files now contain **SRS summaries only**. Load full requirements on demand:
+
+```bash
+contextpilot knowledge relevant --file api/inventory/service.ts --task code --limit 2 --json
+contextpilot knowledge show srs-07-inventory
+```
+
+`knowledge show` resolves the full body from the canonical SRS source when ingest hashes match; if the SRS file changed without re-ingest, JSON output includes `driftWarning` and the ingested rule body is used instead.
+
+Cursor scoped `.mdc` rules still carry full module SRS bodies when you edit matching paths.
+
+### Migration from 0.3.x
+
+After upgrading to 0.4.0, re-ingest and sync your project:
+
+```bash
+contextpilot srs ingest --path docs/srs --reingest --json
+contextpilot sync --json
+```
+
+To restore the old behavior (full SRS inline in agent files), set in
+`.contextpilot/harness.config.json`:
+
+```json
+{
+  "agentContext": {
+    "globalKnowledgePolicy": "full",
+    "listKnowledgeInMainFile": "full"
+  }
+}
+```
 
 ## Examples
 

@@ -179,3 +179,205 @@ test("knowledge show reports unknown ids clearly", () => {
     assert.equal(result.json.id, "missing-id");
   });
 });
+
+function setupMultiSectionProject(cwd) {
+  runJson(cwd, ["setup", "--no-git", "--agent", "codex"]);
+  const sections = ["03", "06", "07", "08"];
+  for (const section of sections) {
+    writeKnowledge(
+      cwd,
+      `srs-${section}-inventory`,
+      [
+        `id: srs-${section}-inventory`,
+        `title: "SRS ${section}: Inventory"`,
+        "type: knowledge",
+        "priority: normal",
+        `section: "${section}"`,
+        "module: inventory",
+        "scope:",
+        "  - api/inventory/**",
+        "targets:",
+        "  - codex",
+        `tags:`,
+        `  - srs-${section}`,
+      ],
+      `Section ${section} inventory requirements.`,
+    );
+  }
+}
+
+test("knowledge relevant limits by section and groups by module", () => {
+  withTempProject((cwd) => {
+    setupMultiSectionProject(cwd);
+
+    const result = runJson(cwd, [
+      "knowledge",
+      "relevant",
+      "--file",
+      "api/inventory/service.ts",
+      "--sections",
+      "07,03",
+      "--limit",
+      "2",
+    ]);
+
+    assert.equal(result.code, 0);
+    assert.equal(result.json.results.length, 2);
+    const sections = result.json.results.map((r) => r.section);
+    assert.ok(sections.includes("07"));
+    assert.ok(sections.includes("03"));
+    assert.equal(result.json.results.every((r) => r.module === "inventory"), true);
+  });
+});
+
+test("knowledge query filters by module slug", () => {
+  withTempProject((cwd) => {
+    setupMultiSectionProject(cwd);
+
+    const result = runJson(cwd, [
+      "knowledge",
+      "query",
+      "--query",
+      "inventory",
+      "--module",
+      "inventory",
+      "--sections",
+      "07",
+    ]);
+
+    assert.equal(result.code, 0);
+    assert.equal(result.json.results.length, 1);
+    assert.equal(result.json.results[0].id, "srs-07-inventory");
+    assert.equal(result.json.results[0].module, "inventory");
+  });
+});
+
+test("knowledge show resolves canonical source when hash matches", () => {
+  withTempProject((cwd) => {
+    runJson(cwd, ["setup", "--no-git", "--agent", "codex"]);
+    writeFile(
+      cwd,
+      "docs/srs/07-business-rules/module-auth.md",
+      "# Section 7: Business Rules - Module: Auth\n\nCANONICAL_BODY_MARKER\n",
+    );
+    runJson(cwd, ["srs", "ingest", "--path", "docs/srs", "--reingest"]);
+
+    const result = runJson(cwd, ["knowledge", "show", "srs-07-auth"]);
+
+    assert.equal(result.code, 0);
+    assert.equal(result.json.resolvedFrom, "canonical");
+    assert.match(result.json.body, /CANONICAL_BODY_MARKER/);
+    assert.match(result.json.source, /docs\/srs\/07-business-rules\/module-auth\.md/);
+  });
+});
+
+test("knowledge results include readPolicy and deliveryHint", () => {
+  withTempProject((cwd) => {
+    setupKnowledgeProject(cwd);
+
+    const result = runJson(cwd, [
+      "knowledge",
+      "relevant",
+      "--file",
+      "src/auth/login.ts",
+    ]);
+
+    assert.equal(result.code, 0);
+    assert.equal(result.json.results[0].readPolicy, "knowledge-show-once");
+    assert.match(result.json.results[0].deliveryHint, /knowledge show/);
+  });
+});
+
+test("knowledge show falls back to rule body when canonical hash drifts", () => {
+  withTempProject((cwd) => {
+    runJson(cwd, ["setup", "--no-git", "--agent", "codex"]);
+    writeFile(
+      cwd,
+      "docs/srs/07-business-rules/module-auth.md",
+      "# Section 7: Business Rules - Module: Auth\n\nCANONICAL_BODY_MARKER\n",
+    );
+    runJson(cwd, ["srs", "ingest", "--path", "docs/srs", "--reingest"]);
+
+    writeFile(
+      cwd,
+      "docs/srs/07-business-rules/module-auth.md",
+      "# Section 7: Business Rules - Module: Auth\n\nDRIFTED_CANONICAL_BODY\n",
+    );
+
+    const result = runJson(cwd, ["knowledge", "show", "srs-07-auth"]);
+
+    assert.equal(result.code, 0);
+    assert.equal(result.json.resolvedFrom, "rule");
+    assert.match(result.json.driftWarning, /Canonical source drift/);
+    assert.doesNotMatch(result.json.body, /DRIFTED_CANONICAL_BODY/);
+    assert.match(result.json.source, /\.contextpilot\/rules\/srs-07-auth\.md/);
+  });
+});
+
+test("knowledge relevant uses skip-body-read for cursor scoped matches", () => {
+  withTempProject((cwd) => {
+    setupKnowledgeProject(cwd);
+
+    const result = runJson(cwd, [
+      "knowledge",
+      "relevant",
+      "--file",
+      "src/auth/login.ts",
+      "--target",
+      "cursor",
+    ]);
+
+    assert.equal(result.code, 0);
+    assert.equal(result.json.target, "cursor");
+    assert.equal(result.json.results[0].readPolicy, "skip-body-read");
+    assert.match(result.json.results[0].deliveryHint, /Scoped Cursor rules/);
+  });
+});
+
+test("knowledge relevant uses knowledge-show-once for codex", () => {
+  withTempProject((cwd) => {
+    setupKnowledgeProject(cwd);
+
+    const result = runJson(cwd, [
+      "knowledge",
+      "relevant",
+      "--file",
+      "src/auth/login.ts",
+      "--target",
+      "codex",
+    ]);
+
+    assert.equal(result.code, 0);
+    assert.equal(result.json.target, "codex");
+    assert.equal(result.json.results[0].readPolicy, "knowledge-show-once");
+    assert.match(result.json.results[0].deliveryHint, /knowledge show/);
+  });
+});
+
+test("knowledge relevant uses legacy-full in inline knowledge mode", () => {
+  withTempProject((cwd) => {
+    setupKnowledgeProject(cwd);
+    const config = JSON.parse(
+      fs.readFileSync(path.join(cwd, ".contextpilot", "harness.config.json"), "utf8"),
+    );
+    config.agentContext.knowledgeMode = "inline";
+    fs.writeFileSync(
+      path.join(cwd, ".contextpilot", "harness.config.json"),
+      `${JSON.stringify(config, null, 2)}\n`,
+      "utf8",
+    );
+
+    const result = runJson(cwd, [
+      "knowledge",
+      "relevant",
+      "--file",
+      "src/auth/login.ts",
+      "--target",
+      "codex",
+    ]);
+
+    assert.equal(result.code, 0);
+    assert.equal(result.json.results[0].readPolicy, "legacy-full");
+    assert.match(result.json.results[0].deliveryHint, /Inline knowledge mode/);
+  });
+});

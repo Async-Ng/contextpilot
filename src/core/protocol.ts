@@ -29,8 +29,12 @@ export const HARNESS_PROTOCOL = `## ContextPilot Protocol - invisible to the use
   4. Only then proceed with code changes in the affected scope
 - If \`status --json\` reports new external rules or skills, run: \`contextpilot refresh --auto --json\`.
 - Before relying on SRS, requirements, or imported project knowledge, run
-  \`contextpilot knowledge relevant --file "<path>" --json\` for file-scoped work or
-  \`contextpilot knowledge query --query "<topic>" --json\`, then read the returned source files.
+  \`contextpilot knowledge relevant --file "<path>" --task code --limit 2 --json\` for file-scoped work or
+  \`contextpilot knowledge query --query "<topic>" --json\` for topic search.
+- Agent files contain SRS summaries only. Never assume full SRS text is in context.
+- Load full body only via \`contextpilot knowledge show <id>\` for the returned ids (max 1-2 per task).
+- Do NOT Read docs/srs or .contextpilot/rules directly unless editing SRS sources or srsDrift is set.
+- Cursor: if scoped .mdc rules already match the edited path, skip re-reading the same SRS body.
 - If status or the agent file reports "SRS Bootstrap Required", run
   \`contextpilot srs bootstrap --json\`, read \`.contextpilot/skills/fullstack-to-srs/SKILL.md\`,
   write the initial SRS under \`docs/srs/\`, then run

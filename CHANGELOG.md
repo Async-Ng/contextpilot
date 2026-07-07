@@ -1,5 +1,32 @@
 ﻿# Changelog
 
+## 0.4.0 - Knowledge layer optimization (multi-agent)
+
+### Added
+
+- SRS ingest now writes extended rule metadata: `section`, `module`, `canonicalSource`, `srsKind`,
+  and section-aware `priority`/`tags`.
+- `knowledge query` / `relevant` support `--sections`, `--module`, and `--task` (code|data|test|explore)
+  with task-aware section ranking and module grouping (default limit 2 for relevant).
+- `knowledge show` resolves full body from `canonicalSource` when SRS hash matches state.
+- `knowledge-policy.ts` — agent-aware read policy resolver (`skip-body-read`, `knowledge-show-once`).
+- `knowledge-summary.ts` — compact global SRS summary tables for agent files.
+- `context --inject` now includes **Suggested Knowledge** pointers from orchestration scope.
+- New config: `globalKnowledgePolicy` (`summary` | `full` | `index-only`), `globalSummaryMaxChars`,
+  `relevantDefaultSections`, `relevantDefaultLimit`, `relevantGroupByModule`, `listKnowledgeInMainFile`.
+- `globalKnowledgePolicy: "index-only"` — agent files link to `knowledge-index.md` only (no summary
+  table); full global SRS remains in `_srs-global.mdc` for on-demand use.
+- Cursor: `_srs-global.mdc` on-demand file; `_project.mdc` uses summary instead of full global SRS.
+- `knowledge show` JSON includes `driftWarning` when canonical SRS source hash drifts from ingest state.
+- Tests: `sync-knowledge.test.js`; extended `knowledge.test.js` and `srs-ingest.test.js`.
+
+### Changed
+
+- **Breaking default**: agent files (`AGENTS.md`, `CLAUDE.md`, `_project.mdc`) now contain SRS
+  summaries only; full text via `contextpilot knowledge show <id>`.
+- Protocol updated: agents must not assume full SRS is in context; use `knowledge show` on demand.
+- Knowledge index includes `section`, `module`, and `canonicalSource` columns.
+
 ## 0.3.7 - Recognize tombstone (removed-module) SRS docs
 
 ### Added

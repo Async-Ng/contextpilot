@@ -27,12 +27,20 @@ const srsConfigSchema = z.object({
 });
 
 export const knowledgeModeSchema = z.enum(["manifest", "inline"]);
+export const globalKnowledgePolicySchema = z.enum(["summary", "full", "index-only"]);
+export const listKnowledgeInMainFileSchema = z.enum(["compact", "full", "none"]);
 
 export const agentContextConfigSchema = z.object({
   knowledgeMode: knowledgeModeSchema,
   knowledgeIndexFile: z.string(),
   knowledgeExcerptChars: z.number().int().positive(),
   maxMainFileChars: z.number().int().positive(),
+  globalKnowledgePolicy: globalKnowledgePolicySchema.default("summary"),
+  globalSummaryMaxChars: z.number().int().positive().default(4000),
+  relevantDefaultSections: z.array(z.string()).default(["07", "03"]),
+  relevantDefaultLimit: z.number().int().positive().default(2),
+  relevantGroupByModule: z.boolean().default(true),
+  listKnowledgeInMainFile: listKnowledgeInMainFileSchema.default("compact"),
 });
 
 export const gateModeSchema = z.enum(["sensitive-only", "strict"]);
@@ -126,6 +134,12 @@ export function defaultAgentContextConfig(): AgentContextConfig {
     knowledgeIndexFile: ".contextpilot/context/knowledge-index.md",
     knowledgeExcerptChars: 240,
     maxMainFileChars: 120000,
+    globalKnowledgePolicy: "summary",
+    globalSummaryMaxChars: 4000,
+    relevantDefaultSections: ["07", "03"],
+    relevantDefaultLimit: 2,
+    relevantGroupByModule: true,
+    listKnowledgeInMainFile: "compact",
   };
 }
 

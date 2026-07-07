@@ -5,6 +5,7 @@ import { loadConfig, resolveProjectPath } from "./config-io";
 import { readFocus } from "./context";
 import { sha256, sha256File, warn, withLock, writeAtomic } from "./io";
 import { formatLearningsSection, readActiveLearnings } from "./memory";
+import { buildGlobalKnowledgeSummary } from "./knowledge-summary";
 import { HARNESS_PROTOCOL } from "./protocol";
 import { filterRulesForAgent, listRules, sortRules, type Rule } from "./rules";
 import { getSrsStatus } from "./srs-state";
@@ -56,11 +57,16 @@ function buildKnowledgeIndexContent(
       `## ${rule.title}`,
       "",
       `- ID: ${rule.id}`,
+      `- Section: ${rule.section ?? "-"}`,
+      `- Module: ${rule.module ?? "-"}`,
       `- Priority: ${rule.priority}`,
       `- Scope: ${formatList(rule.scope)}`,
       `- Targets: ${formatList(rule.targets)}`,
       `- Source: ${projectRelativePath(projectRoot, rule.filePath)}`,
     );
+    if (rule.canonicalSource) {
+      lines.push(`- Canonical: ${rule.canonicalSource}`);
+    }
     const excerpt = normalizeExcerpt(
       rule.body,
       config.agentContext.knowledgeExcerptChars,
@@ -79,8 +85,9 @@ function appendKnowledgeSection(
   config: HarnessConfig,
   projectRoot: string,
   knowledgeRules: Rule[],
+  globalKnowledge: Rule[],
 ): void {
-  if (knowledgeRules.length === 0) {
+  if (knowledgeRules.length === 0 && globalKnowledge.length === 0) {
     return;
   }
 
@@ -93,19 +100,68 @@ function appendKnowledgeSection(
   }
 
   const indexRel = config.agentContext.knowledgeIndexFile.replace(/\\/g, "/");
-  sections.push(
-    "# Project Knowledge Index",
-    "",
-    `Full project knowledge is indexed at \`${indexRel}\`.`,
-    "Before relying on SRS, requirements, or imported knowledge, read the relevant source files listed in that index for the current task scope.",
-    "",
-  );
-  for (const r of knowledgeRules) {
+  const listMode = config.agentContext.listKnowledgeInMainFile;
+
+  if (listMode === "none") {
     sections.push(
-      `- ${r.title} (${r.id}) - scope: ${formatList(r.scope)} - source: ${projectRelativePath(projectRoot, r.filePath)}`,
+      "# Project Knowledge",
+      "",
+      `Knowledge index: \`${indexRel}\`.`,
+      "Use `contextpilot knowledge relevant --file \"<path>\" --task code --limit 2 --json` then `knowledge show <id>`.",
+      "",
+    );
+  } else if (listMode === "compact") {
+    sections.push(
+      "# Project Knowledge",
+      "",
+      `Knowledge index: \`${indexRel}\`.`,
+      "Agent files contain SRS summaries only. For file-scoped work:",
+      "`contextpilot knowledge relevant --file \"<path>\" --task code --limit 2 --json`",
+      "Load full body: `contextpilot knowledge show <id>` (max 1-2 per task).",
+      "",
+    );
+  } else {
+    sections.push(
+      "# Project Knowledge Index",
+      "",
+      `Full project knowledge is indexed at \`${indexRel}\`.`,
+      "Before relying on SRS, requirements, or imported knowledge, read the relevant source files listed in that index for the current task scope.",
+      "",
+    );
+    for (const r of knowledgeRules) {
+      const canonical = r.canonicalSource ? ` - canonical: ${r.canonicalSource}` : "";
+      sections.push(
+        `- ${r.title} (${r.id}) - scope: ${formatList(r.scope)} - source: ${projectRelativePath(projectRoot, r.filePath)}${canonical}`,
+      );
+    }
+    sections.push("");
+  }
+
+  if (
+    config.agentContext.globalKnowledgePolicy === "summary" &&
+    globalKnowledge.length > 0
+  ) {
+    const summary = buildGlobalKnowledgeSummary(config, globalKnowledge);
+    if (summary) {
+      sections.push(summary, "");
+    }
+  } else if (config.agentContext.globalKnowledgePolicy === "full") {
+    for (const r of globalKnowledge) {
+      sections.push(`## ${r.title}`, "", r.body, "");
+    }
+  } else if (
+    config.agentContext.globalKnowledgePolicy === "index-only" &&
+    globalKnowledge.length > 0
+  ) {
+    const indexRel = config.agentContext.knowledgeIndexFile.replace(/\\/g, "/");
+    sections.push(
+      "## Global SRS Knowledge",
+      "",
+      `Global SRS sections are indexed in \`${indexRel}\`.`,
+      "Use `contextpilot knowledge relevant --file \"<path>\" --task code --limit 2 --json` then `knowledge show <id>`.",
+      "",
     );
   }
-  sections.push("");
 }
 
 function buildSrsBootstrapSection(
@@ -148,6 +204,7 @@ function buildSingleFileContent(
   const projectRoot = path.dirname(harnessDir);
   const ruleRules = rules.filter((r) => r.type === "rule");
   const knowledgeRules = rules.filter((r) => r.type === "knowledge");
+  const globalKnowledge = knowledgeRules.filter((r) => r.scope.includes("**/*"));
   const focus = readFocus(harnessDir);
   const learnings = readActiveLearnings(harnessDir);
   const learningsText = formatLearningsSection(
@@ -168,7 +225,7 @@ function buildSingleFileContent(
     }
   }
 
-  appendKnowledgeSection(sections, config, projectRoot, knowledgeRules);
+  appendKnowledgeSection(sections, config, projectRoot, knowledgeRules, globalKnowledge);
 
   if (focus) {
     sections.push("# Current Focus", "", focus, "");
@@ -241,14 +298,41 @@ function buildCursorFiles(
   for (const r of ruleRules) {
     projectParts.push(`## ${r.title}`, "", r.body, "");
   }
-  for (const r of globalKnowledge) {
-    projectParts.push(`## ${r.title}`, "", r.body, "");
+  if (config.agentContext.globalKnowledgePolicy === "summary" && globalKnowledge.length > 0) {
+    const summary = buildGlobalKnowledgeSummary(config, globalKnowledge);
+    if (summary) {
+      projectParts.push(summary, "");
+    }
+  } else if (config.agentContext.globalKnowledgePolicy === "full") {
+    for (const r of globalKnowledge) {
+      projectParts.push(`## ${r.title}`, "", r.body, "");
+    }
+  } else if (
+    config.agentContext.globalKnowledgePolicy === "index-only" &&
+    globalKnowledge.length > 0
+  ) {
+    const indexRel = config.agentContext.knowledgeIndexFile.replace(/\\/g, "/");
+    projectParts.push(
+      "## Global SRS Knowledge",
+      "",
+      `Global SRS sections are indexed in \`${indexRel}\`.`,
+      "Use `contextpilot knowledge relevant --file \"<path>\" --task code --limit 2 --json` then `knowledge show <id>`.",
+      "",
+    );
   }
   if (projectParts.length > 0) {
     files.set(
       "_project.mdc",
       mdcFrontmatter("Project rules and global knowledge", ["**/*"], true) +
         projectParts.join("\n"),
+    );
+  }
+
+  if (globalKnowledge.length > 0 && config.agentContext.globalKnowledgePolicy !== "full") {
+    const fullGlobal = globalKnowledge.map((r) => `## ${r.title}\n\n${r.body}`).join("\n\n");
+    files.set(
+      "_srs-global.mdc",
+      mdcFrontmatter("Global SRS (on-demand)", ["docs/srs/**"], false) + `${fullGlobal}\n`,
     );
   }
 

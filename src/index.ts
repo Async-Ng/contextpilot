@@ -146,6 +146,9 @@ knowledge
   .requiredOption("--query <text>", "Text to match against knowledge title, id, tags, and body")
   .option("--file <path...>", "Relevant file path(s)")
   .option("--scope <glob>", "Relevant scope glob(s), comma-separated")
+  .option("--sections <nums>", "Filter by SRS section numbers, comma-separated (e.g. 07,03)")
+  .option("--module <slug>", "Filter by module slug(s), comma-separated")
+  .option("--task <task>", "Task-aware section ranking: code|data|test|explore")
   .option("--target <agent>", "Filter by agent target")
   .option("--limit <n>", "Maximum results", "10")
   .option("--include-body", "Include full body in JSON output", false)
@@ -157,8 +160,11 @@ knowledge
   .command("relevant")
   .description("Find knowledge relevant to file path(s)")
   .requiredOption("--file <path...>", "Relevant file path(s)")
+  .option("--sections <nums>", "Filter by SRS section numbers, comma-separated (e.g. 07,03)")
+  .option("--module <slug>", "Filter by module slug(s), comma-separated")
+  .option("--task <task>", "Task-aware section ranking: code|data|test|explore", "code")
   .option("--target <agent>", "Filter by agent target")
-  .option("--limit <n>", "Maximum results", "10")
+  .option("--limit <n>", "Maximum results", "2")
   .action((opts) => {
     runKnowledgeRelevant(opts);
   });

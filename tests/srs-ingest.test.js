@@ -108,6 +108,11 @@ test("srs ingest reads nested module files and ignores section README indexes", 
     assert.match(readRule(cwd, "srs-06-auth"), /Data auth body/);
     assert.match(readRule(cwd, "srs-07-auth"), /BR auth body/);
     assert.match(readRule(cwd, "srs-08-auth"), /UC auth body/);
+    const authRule = readRule(cwd, "srs-07-auth");
+    assert.match(authRule, /section: "?07"?/);
+    assert.match(authRule, /module: auth/);
+    assert.match(authRule, /canonicalSource: docs\/srs\/07-business-rules\/module-auth\.md/);
+    assert.match(authRule, /srsKind: business-rules/);
     assert.equal(
       fs.existsSync(path.join(cwd, ".contextpilot", "rules", "srs-03-section-3-index.md")),
       false,
@@ -284,13 +289,14 @@ test("srs ingest keeps full knowledge out of single-file agent targets by defaul
       "utf8",
     );
 
-    assert.match(agentsMd, /# Project Knowledge Index/);
-    assert.match(agentsMd, /\.contextpilot\/context\/knowledge-index\.md/);
+    assert.match(agentsMd, /# Project Knowledge/);
+    assert.match(agentsMd, /knowledge relevant/);
+    assert.match(agentsMd, /knowledge show/);
     assert.doesNotMatch(agentsMd, /NEVER_INLINE_BODY/);
     assert.match(index, /SRS 03: Auth/);
     assert.match(index, /- ID: srs-03-auth/);
-    assert.match(index, /- Scope: \*\*\/auth\*/);
-    assert.match(index, /- Source: \.contextpilot\/rules\/srs-03-auth\.md/);
+    assert.match(index, /- Section: 03/);
+    assert.match(index, /- Canonical: docs\/srs\/03-functional-requirements\/module-auth\.md/);
     assert.match(index, /NEVER_INLINE_BODY marker/);
     assert.match(readRule(cwd, "srs-03-auth"), /NEVER_INLINE_BODY marker/);
   });

@@ -2,6 +2,13 @@ import { z } from "zod";
 
 export const ruleTypeSchema = z.enum(["rule", "knowledge"]);
 export const prioritySchema = z.enum(["high", "normal", "low"]);
+export const srsKindSchema = z.enum([
+  "functional-requirements",
+  "data-requirements",
+  "business-rules",
+  "user-stories",
+  "global",
+]);
 
 export const ruleOriginSchema = z.object({
   agent: z.string(),
@@ -17,11 +24,16 @@ export const ruleFrontmatterSchema = z.object({
   priority: prioritySchema.optional(),
   tags: z.array(z.string()).optional(),
   origin: ruleOriginSchema.optional(),
+  section: z.string().optional(),
+  module: z.string().optional(),
+  canonicalSource: z.string().optional(),
+  srsKind: srsKindSchema.optional(),
 });
 
 export type RuleFrontmatter = z.infer<typeof ruleFrontmatterSchema>;
 export type RuleType = z.infer<typeof ruleTypeSchema>;
 export type Priority = z.infer<typeof prioritySchema>;
+export type SrsKind = z.infer<typeof srsKindSchema>;
 
 export interface Rule {
   filePath: string;
@@ -33,6 +45,10 @@ export interface Rule {
   priority: Priority;
   tags: string[];
   origin?: z.infer<typeof ruleOriginSchema>;
+  section?: string;
+  module?: string;
+  canonicalSource?: string;
+  srsKind?: SrsKind;
   body: string;
 }
 

@@ -4,6 +4,7 @@ import {
   queryKnowledge,
   type KnowledgeQueryResult,
   type KnowledgeResult,
+  type KnowledgeTask,
 } from "../core/knowledge";
 import { EXIT_GENERAL, EXIT_OK, errOut, out, requireHarness } from "../core/io";
 
@@ -14,17 +15,23 @@ export interface KnowledgeQueryCommandOptions {
   target?: string;
   limit?: string;
   includeBody?: boolean;
+  sections?: string;
+  module?: string;
+  task?: string;
 }
 
 export interface KnowledgeRelevantCommandOptions {
   file?: string[];
   target?: string;
   limit?: string;
+  sections?: string;
+  module?: string;
+  task?: string;
 }
 
-function parseLimit(value: string | undefined): number {
+function parseLimit(value: string | undefined, fallback = 10): number {
   if (!value) {
-    return 10;
+    return fallback;
   }
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -43,14 +50,33 @@ function parseScopes(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
+function parseSections(value: string | undefined): string[] {
+  return parseScopes(value);
+}
+
+function parseModules(value: string | undefined): string[] {
+  return parseScopes(value);
+}
+
+function parseTask(value: string | undefined): KnowledgeTask | undefined {
+  if (!value) return undefined;
+  const valid: KnowledgeTask[] = ["code", "data", "test", "explore"];
+  if (!valid.includes(value as KnowledgeTask)) {
+    throw new Error(`Invalid --task value: ${value} (expected code|data|test|explore)`);
+  }
+  return value as KnowledgeTask;
+}
+
 function formatResultLine(result: KnowledgeResult): string {
-  return [
+  const parts = [
     chalk.bold(result.id),
     `[score ${result.score}]`,
     result.title,
-    `scope: ${result.scope.join(", ")}`,
-    `source: ${result.source}`,
-  ].join(" - ");
+  ];
+  if (result.section) parts.push(`section: ${result.section}`);
+  if (result.module) parts.push(`module: ${result.module}`);
+  parts.push(`source: ${result.source}`);
+  return parts.join(" - ");
 }
 
 function humanSummary(result: KnowledgeQueryResult): string {
@@ -70,6 +96,9 @@ export function runKnowledgeQuery(options: KnowledgeQueryCommandOptions): void {
       target: options.target,
       limit: parseLimit(options.limit),
       includeBody: options.includeBody ?? false,
+      sections: parseSections(options.sections),
+      modules: parseModules(options.module),
+      task: parseTask(options.task),
     });
     out(humanSummary(result), result);
     process.exit(EXIT_OK);
@@ -93,8 +122,11 @@ export function runKnowledgeRelevant(options: KnowledgeRelevantCommandOptions): 
     const result = queryKnowledge(harnessDir, {
       files,
       target: options.target,
-      limit: parseLimit(options.limit),
+      limit: parseLimit(options.limit, 2),
       includeBody: false,
+      sections: parseSections(options.sections),
+      modules: parseModules(options.module),
+      task: parseTask(options.task) ?? "code",
     });
     out(humanSummary(result), result);
     process.exit(EXIT_OK);

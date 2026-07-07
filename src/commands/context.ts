@@ -1,7 +1,10 @@
-﻿import { loadConfig } from "../core/config-io";
+﻿import type { AgentName } from "../core/config";
+import { loadConfig } from "../core/config-io";
 import { readFocus } from "../core/context";
 import { listOpenDecisions, type Decision } from "../core/decisions";
 import { EXIT_OK, out, requireHarness } from "../core/io";
+import { queryKnowledge } from "../core/knowledge";
+import { resolveReadPolicy } from "../core/knowledge-policy";
 import {
   formatLearningsSection,
   readActiveLearnings,
@@ -32,6 +35,7 @@ export interface ContextInjectPayload {
   openDecisions: Decision[];
   orchestration: OrchestrationSummary;
   srsDrift: SrsFileDrift[];
+  suggestedKnowledge: Array<{ id: string; title: string; hint: string }>;
   text: string;
 }
 
@@ -112,12 +116,72 @@ function formatSrsDriftSection(drift: SrsFileDrift[]): string {
   return lines.join("\n");
 }
 
+function formatSuggestedKnowledgeSection(
+  items: Array<{ id: string; title: string; hint: string }>,
+): string {
+  if (items.length === 0) {
+    return "";
+  }
+  const lines: string[] = ["## Suggested Knowledge", ""];
+  for (const item of items) {
+    lines.push(`- **${item.id}** (${item.title}) — \`${item.hint}\``);
+  }
+  return lines.join("\n");
+}
+
+function resolveSuggestedKnowledge(
+  harnessDir: string,
+  orchestration: OrchestrationSummary,
+  focus: string,
+): Array<{ id: string; title: string; hint: string }> {
+  const scopes: string[] = [];
+  if (orchestration.activeRun?.scope) {
+    scopes.push(...orchestration.activeRun.scope);
+  }
+  if (focus) {
+    const globMatch = focus.match(/\*\*\/[^\s*]+/);
+    if (globMatch) scopes.push(globMatch[0]);
+  }
+  if (scopes.length === 0) {
+    return [];
+  }
+
+  const result = queryKnowledge(harnessDir, {
+    scopes,
+    task: "code",
+    limit: 3,
+    groupByModule: true,
+  });
+  if (result.results.length === 0) {
+    return [];
+  }
+
+  const config = loadConfig(harnessDir);
+  const scopeFile = scopes.find((scope) => !scope.includes("*"));
+  const policy = resolveReadPolicy(
+    "cursor" as AgentName,
+    scopeFile,
+    result.results,
+    { knowledgeMode: config.agentContext.knowledgeMode },
+  );
+
+  return result.results.map((r) => ({
+    id: r.id,
+    title: r.title,
+    hint:
+      policy.policy === "knowledge-show-once" || policy.policy === "skip-body-read"
+        ? policy.hint
+        : `knowledge show ${r.id}`,
+  }));
+}
+
 function formatInjectText(
   focus: string,
   learnings: Learning[],
   openDecisions: Decision[],
   orchestration: OrchestrationSummary,
   srsDrift: SrsFileDrift[],
+  suggestedKnowledge: Array<{ id: string; title: string; hint: string }>,
 ): string {
   const sections: string[] = ["# Harness Session Context", ""];
 
@@ -152,6 +216,11 @@ function formatInjectText(
     sections.push(srsDriftText, "");
   }
 
+  const suggestedText = formatSuggestedKnowledgeSection(suggestedKnowledge);
+  if (suggestedText) {
+    sections.push(suggestedText, "");
+  }
+
   return sections.join("\n").trim();
 }
 
@@ -167,7 +236,15 @@ export function formatInjectPayload(harnessDir: string): ContextInjectPayload {
   const openDecisions = listOpenDecisions(harnessDir);
   const orchestration = getOrchestrationSummary(harnessDir);
   const srsDrift = getSrsFileDrift(harnessDir);
-  const text = formatInjectText(focus, sorted, openDecisions, orchestration, srsDrift);
+  const suggestedKnowledge = resolveSuggestedKnowledge(harnessDir, orchestration, focus);
+  const text = formatInjectText(
+    focus,
+    sorted,
+    openDecisions,
+    orchestration,
+    srsDrift,
+    suggestedKnowledge,
+  );
 
   return {
     focus,
@@ -182,6 +259,7 @@ export function formatInjectPayload(harnessDir: string): ContextInjectPayload {
     openDecisions,
     orchestration,
     srsDrift,
+    suggestedKnowledge,
     text,
   };
 }
@@ -199,6 +277,7 @@ export function runContextInject(options: ContextInjectOptions = {}): void {
     openDecisions: payload.openDecisions,
     orchestration: payload.orchestration,
     srsDrift: payload.srsDrift,
+    suggestedKnowledge: payload.suggestedKnowledge,
     text: payload.text,
   });
   process.exit(EXIT_OK);

@@ -172,9 +172,21 @@ function mergeCursorHooks(
 
 /** Resolve CLI prefix for hook commands: local node_modules, dev dist, or npx. */
 export function resolveHarnessCommand(projectRoot: string): string {
-  const pkgDist = path.join(projectRoot, "node_modules", "contextpilot", "dist", "index.js");
-  if (fs.existsSync(pkgDist)) {
-    return `node "${pkgDist.replace(/\\/g, "/")}"`;
+  const candidates = [
+    path.join(projectRoot, "node_modules", "contextpilot", "dist", "index.js"),
+    path.join(
+      projectRoot,
+      "node_modules",
+      "@async-nguyen",
+      "contextpilot",
+      "dist",
+      "index.js",
+    ),
+  ];
+  for (const pkgDist of candidates) {
+    if (fs.existsSync(pkgDist)) {
+      return `node "${pkgDist.replace(/\\/g, "/")}"`;
+    }
   }
 
   const localDist = path.resolve(__dirname, "..", "index.js");
