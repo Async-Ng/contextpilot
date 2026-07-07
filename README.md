@@ -1,357 +1,260 @@
-﻿# ContextPilot
+# ContextPilot
 
-ContextPilot (`contextpilot`) is a local control plane that lets humans chat normally with AI coding agents while the agents run the ContextPilot protocol themselves. It manages **context + memory + orchestration** for Claude Code, Cursor, Codex, Windsurf, and GitHub Copilot from a single source of truth in `.contextpilot/`.
+**ContextPilot** is a local-first control plane that gives AI coding agents (Claude Code, Cursor,
+Codex, GitHub Copilot, Windsurf) persistent project context, memory, and a structured workflow —
+without you having to operate a CLI yourself. You run one setup command; after that you just chat
+with your agent normally, and the agent runs ContextPilot commands in the background.
 
-## Three-layer model
+Everything lives in a single `.contextpilot/` folder in your repo, generated into each agent's
+native instruction files (`CLAUDE.md`, `.cursor/rules/*.mdc`, `AGENTS.md`, etc.) so every agent
+you use reads the exact same protocol and project knowledge.
 
-| Layer | Purpose | Location |
-|-------|---------|----------|
-| **Long context** | Architecture, conventions, business rules | `.contextpilot/rules/*.md` |
-| **Short context** | Current task / focus | `.contextpilot/context/current.md` |
-| **Memory** | Learnings from mistakes & constraints | `.contextpilot/memory/learnings.jsonl` |
-| **Orchestration** | Active run, workflow steps, trace events | `.contextpilot/orchestration/*.jsonl` |
+## Why
 
-v0.2 adds a **discussion gate** (`.contextpilot/decisions/decisions.jsonl`) and **enforcement hooks** so agents cannot silently change business logic while a question is open.
+AI agents forget everything between sessions and drift out of sync with a project's real state:
+they re-learn the same lessons, silently keep stale copies of requirements docs, and leave
+half-finished multi-step tasks with no record of what's left. ContextPilot fixes this by giving
+agents:
 
-v0.3 adds a local **orchestration control plane** (`.contextpilot/orchestration/`) for prescriptive task runs, workflow steps, role guidance, step-aware gates, and JSONL trace events.
+- a place to **persist** what they've learned (mistakes, constraints, decisions) across sessions,
+- a **workflow** (plan → implement → review → verify → checkpoint) for non-trivial tasks, with a
+  gate that blocks file edits outside the current step's scope,
+- a **discussion gate** that forces the agent to ask you before guessing at business logic, and
+- **drift detection**: whenever a tracked file (SRS docs, generated instructions, ingested
+  knowledge rules) falls out of sync with what the agent last saw, `status`/`context --inject`
+  surface it instead of silently serving stale information.
 
-## Human workflow
+## Supported agents
 
-Humans only need one setup command per project:
+| Agent | Hook coverage |
+|---|---|
+| Claude Code | Full — PreToolUse deny, SessionStart inject, Stop checkpoint |
+| Cursor | Full — pre-shell/pre-MCP deny, post-edit revert, session hooks |
+| Codex | Best-effort (writes `AGENTS.md`; hook surface not guaranteed on every version) |
+| GitHub Copilot | Instructions file only — no hook API; git pre-commit is the backstop |
+| Windsurf | Instructions file only — git pre-commit is the backstop |
+
+Every agent that has no hook support still gets the git pre-commit backstop, so business-logic
+edits can't slip through unnoticed even without agent-native hooks.
+
+## Installation
 
 ```bash
 npm install -g @async-nguyen/contextpilot
+```
+
+(Or add it as a dev dependency and use `npx contextpilot ...` instead of a global install.)
+
+## Quick start
+
+```bash
 cd your-project
 contextpilot setup
 ```
 
-After that, chat with your AI agent normally. The generated agent instructions and hooks tell the agent to inject context, start orchestration, advance steps, record learnings, enforce gates, and checkpoint without asking you to operate the CLI.
+That's it. `setup` auto-detects which agents you use, scaffolds `.contextpilot/`, installs hooks
+and a git pre-commit backstop, ingests `docs/srs/` if it exists, and regenerates every agent's
+instruction files. From here, open your AI coding agent and describe what you want — the agent
+reads the generated instructions and drives ContextPilot itself.
 
-## Zero-touch setup
-
-For headless or CI-friendly bootstrap, `setup` wraps the zero-touch pipeline:
+For headless/CI setup with no prompts:
 
 ```bash
-npm install -g @async-nguyen/contextpilot
-cd your-project
 contextpilot setup --json --no-input
 ```
 
-This runs the full pipeline without prompts:
+## What `setup` does
 
-1. **Detect agents** - scan `.claude/`, `.cursor/`, `AGENTS.md`, `.github/copilot-instructions.md`, `.windsurf/`; always includes Codex so `AGENTS.md` is generated
-2. **Scaffold** `.contextpilot/` (rules, memory, context, decisions, orchestration)
-3. **`gate install`** - deep-merge hooks for detected agents + git pre-commit backstop
-4. **SRS ingest** if `docs/srs/` exists, or mark greenfield projects as missing SRS
-5. **Auto-discover** external rules/skills (knowledge, low priority, no prompts)
-6. **`sync`** - regenerate agent target files
+1. **Detects agents** already configured in the repo (`.claude/`, `.cursor/`, `AGENTS.md`,
+   `.github/copilot-instructions.md`, `.windsurf/`) — Codex is always included so `AGENTS.md`
+   is generated even on a fresh repo.
+2. **Scaffolds** `.contextpilot/` (rules, memory, context, decisions, orchestration).
+3. Installs **gate hooks** for detected agents plus a git `pre-commit` backstop.
+4. **Ingests `docs/srs/`** if present, or marks the project as SRS-missing (greenfield).
+5. **Auto-discovers** any pre-existing agent rules/skills in the repo and adopts them as
+   low-priority knowledge.
+6. **Syncs** — writes the generated instruction files for every detected agent.
 
-Interactive setup (`contextpilot init` without `--yes`) keeps the v0.1 wizard. Headless without `--yes` exits code `2` with a hint to use `--yes`.
+## Core concepts
 
-`init --yes` remains available as a lower-level command, but `setup` is the recommended user-facing entrypoint.
+| Concept | What it holds | Where |
+|---|---|---|
+| Long-term context | Architecture, conventions, business rules, ingested SRS knowledge | `.contextpilot/rules/*.md` |
+| Short-term focus | What the current task is | `.contextpilot/context/current.md` |
+| Memory | Learnings from past mistakes/constraints | `.contextpilot/memory/learnings.jsonl` |
+| Orchestration | Active run, workflow steps, trace events | `.contextpilot/orchestration/*.jsonl` |
+| Decisions | Open/resolved business-logic questions | `.contextpilot/decisions/decisions.jsonl` |
 
-After zero-touch init, the agent only needs **chat** for business decisions - everything else is protocol-driven.
+### The discussion gate
 
-## Discussion gate flow
-
-When an agent is uncertain about business logic, it must not guess:
+When an agent is uncertain about a business-logic decision, it must not guess — it opens a
+discussion, asks you in chat, and only proceeds once you've answered:
 
 ```
 Agent uncertain about requirements
   -> contextpilot decision open --question "..." --scope "src/**" --json
-  -> ask user in chat and wait
+  -> asks you in chat, waits for your answer
   -> contextpilot decision resolve --id <id> --resolution "..." --json
-  -> rule decision-<id> synced -> gate allows changes in scope
+  -> a rule is generated from the resolution -> gate allows changes in that scope
 ```
 
-While a decision is **open**:
+While a decision is **open**, `gate check` (agent hooks) and `gate precommit` (git backstop) both
+deny edits/commits in the affected scope, and `status --json` reports `inDiscussion: true`.
 
-- `status --json` reports `inDiscussion: true` and `openDecisions`
-- `gate check` (agent hooks) **denies** edits/commands in gated scopes
-- `gate precommit` (git backstop) **blocks** commits
-- `watch` may **revert** file changes in business scopes (Cursor `afterFileEdit`)
+### Orchestration workflow
 
-`decision resolve` with `confirmMode: "chat"` (default) allows the agent to resolve in chat even headless. `"terminal"` / `"high-severity-terminal"` require a human TTY for resolve.
-
-## Three enforcement tiers
-
-| Tier | Mechanism | When it fires |
-|------|-----------|---------------|
-| **1 - Agent hooks** | `gate install` -> `gate check --agent <name>` | Pre-tool / pre-shell / pre-MCP (agent-specific) |
-| **2 - Post-edit revert** | Cursor `afterFileEdit` + `watch` | After a denied file edit (git checkout + `.contextpilot/REVERTED.md`) |
-| **3 - Git backstop** | `.git/hooks/pre-commit` -> `gate precommit` | Hard boundary at commit time |
-
-### Per-agent expectations
-
-| Agent | Pre-block | Revert | Commit-only | Notes |
-|-------|-----------|--------|-------------|-------|
-| **Claude Code** | yes | no | no | PreToolUse deny via exit 2; SessionStart -> `context --inject`; Stop -> `checkpoint` |
-| **Cursor** | yes | yes | no | `beforeShellExecution`, `beforeMCPExecution`, `afterFileEdit`; session hooks for inject/checkpoint |
-| **Codex** | best-effort | no | partial | Hook surface VERIFY - may rely on git backstop |
-| **Copilot** | no | no | yes | No hook API confirmed in v0.2 - git pre-commit only |
-| **Windsurf** | no | no | yes | Hook install not supported in v0.2 - git pre-commit only |
-| **git** | no | no | yes | Pre-commit runs `contextpilot gate precommit` |
-
-Run `contextpilot gate install --json` to see the enforcement table for your project.
-
-Gate modes (`harness.config.json` -> `gate.mode`):
-
-- **`sensitive-only`** (default) - SRS-linked learnings + `srs.moduleMap` scopes
-- **`strict`** - all `gate.businessScopes` globs
-
-## Learning loop
-
-```
-Agent works -> makes mistake / finds constraint
-  -> contextpilot learn ...
-  -> learning stored in memory
-  -> checkpoint: contextpilot sync
-  -> "Learned Constraints" injected into agent files
-  -> next session reads constraints -> avoids repeat mistakes
-```
-
-Session hooks (installed by `gate install`):
-
-- **Start:** `contextpilot context --inject` - focus, pinned learnings, open decisions
-- **Stop:** `contextpilot checkpoint` - sync + nudge to run `learn`
-
-## Orchestration control plane
-
-Start a prescriptive coding workflow when an agent needs a structured run:
+For non-trivial coding tasks, an agent starts a structured run:
 
 ```bash
-contextpilot orchestrate start \
-  --goal "Add refund policy validation" \
-  --scope "src/billing/**" \
-  --json
+contextpilot orchestrate start --goal "Add refund policy validation" --scope "src/billing/**" --json
 ```
 
-The active run is injected into `context --inject` as **Active Orchestration**. The agent follows the current role and step:
-
-1. `plan` - planner role, no file edits
-2. `implement` - implementer role, edits allowed only inside run scope
-3. `review` - reviewer role, no file edits by default
-4. `verify` - verifier role, tests/build/checks expected
-5. `checkpoint` - record learnings, sync, and summarize
-
-When a step is done, the agent advances it:
+The run walks through 5 built-in steps — `plan` → `implement` → `review` → `verify` →
+`checkpoint` — each with a role and instructions injected via `context --inject`. The agent
+advances a step when it's done:
 
 ```bash
 contextpilot orchestrate advance --status complete --note "Plan reviewed" --json
 ```
 
-`gate check` is step-aware: it blocks file edits outside the active run scope and blocks edits during non-edit steps. Every start, transition, cancellation, checkpoint, and gate denial appends an event to `.contextpilot/orchestration/events.jsonl`.
+`gate check` is step-aware: it blocks file edits outside the run's scope, and blocks edits
+entirely during non-edit steps (`plan`, `review`). Running `contextpilot checkpoint` while the
+run is at its final `checkpoint` step automatically completes the run — no separate
+`orchestrate advance` call needed for that case.
 
-## Agent workflow
+### SRS (requirements) integration
 
-After `contextpilot setup`, generated agent files contain the ContextPilot Protocol. The agent should:
-
-1. Run `context --inject` at session start.
-2. Start an orchestration run for coding tasks when none is active.
-3. Plan, implement, review, verify, and checkpoint through `orchestrate`.
-4. Record durable mistakes or constraints with `learn`.
-5. Open a `decision` only when a real product/business answer is needed from the user.
-6. Run `checkpoint` at the end of a task.
-
-The user should not need to know these commands during normal use.
-
-## Agent/API Reference
-
-| Command | Agent-auto | Writes | Description |
-|---------|------------|--------|-------------|
-| `setup` | **Human once** | Yes | One-time project setup, then users chat normally |
-| `doctor` | Human / CI | No | Check local harness installation and project setup |
-| `status` | Yes | No | Drift / external / pending / **inDiscussion** |
-| `list` | Yes | No | List rules and learnings |
-| `knowledge query` | Yes | No | Find knowledge by text, file, scope, or target |
-| `knowledge relevant` | Yes | No | Find knowledge relevant to file path(s) |
-| `knowledge show` | Yes | No | Show one knowledge item by id |
-| `learn` | Yes | Append | Record one learning (no sync) |
-| `focus` | Yes | Yes | Update current focus (no sync) |
-| `sync` | Yes | Yes | Regenerate agent targets |
-| `checkpoint` | Yes | Yes | Session stop: sync + learn nudge |
-| `context --inject` | Yes | No | Session start context for hooks |
-| `refresh` | Yes (`--auto`) | Yes | Adopt external + handle drift |
-| `watch` | Yes | Yes | Background sync; revert on gated edits |
-| `orchestrate start` | Yes | Append | Start a prescriptive workflow run |
-| `orchestrate status` | Yes | No | Show active run and current step |
-| `orchestrate advance` | Yes | Append | Complete/block/fail current step |
-| `orchestrate cancel` | Yes | Append | Cancel active run |
-| `orchestrate event` | Yes | Append | Append a trace event |
-| `decision open` | Yes | Append | Open business discussion (no sync) |
-| `decision list` | Yes | No | List decisions (`--open`) |
-| `decision resolve` | Yes* | Yes | Resolve -> rule + sync |
-| `decision reject` | Yes | Yes | Reject discussion + sync |
-| `gate check` | Yes | No | Hook adapter (stdin) |
-| `gate precommit` | Yes | No | Git pre-commit backstop |
-| `gate install` | Yes | Yes | Install hooks + git backstop |
-| `srs install` | Yes | Yes | Install bundled fullstack-to-srs skill for all configured agents |
-| `srs status` | Yes | No | Show SRS bootstrap/ingest state |
-| `srs bootstrap` | Yes | Yes | Prepare a greenfield SRS-first workflow |
-| `srs ingest` | Yes | Yes | Ingest `docs/srs/` into knowledge |
-| `discover` | **Human** | Yes | Import existing rules/skills |
-| `add` | **Human** | Yes | Import a file/dir as rules |
-| `resolve` | Yes | Yes | Archive a learning |
-| `forget` | **Human** | Yes | Permanently delete a learning |
-| `init` | **`--yes`** / Human | Yes | Initialize `.contextpilot/` |
-
-\* `decision resolve` is agent-auto when `gate.confirmMode` is `"chat"`; otherwise may require human TTY.
-
-## Quick start
-
-```bash
-npm install -g @async-nguyen/contextpilot
-cd your-project
-contextpilot setup
-```
-
-Then open your AI coding agent and describe the feature or fix you want. The agent-facing CLI remains available for automation and debugging, but normal users should not need it.
-
-## Publish Status / Beta Limitations
-
-`contextpilot` is a public beta. The CLI command is stable as `contextpilot`, but hook behavior depends on each agent's supported hook surface.
-
-- Claude Code and Cursor have the strongest hook coverage.
-- Codex hook support is best-effort and may rely on git backstops depending on platform/version.
-- Copilot and Windsurf are primarily protected by generated instructions and git pre-commit backstops.
-- Run `contextpilot doctor` after setup to verify generated files, hooks, git backstop, bundled SRS assets, and active orchestration state.
-
-## Examples
-
-### Headless learn + sync (for agents)
-
-```bash
-contextpilot learn \
-  --category constraint \
-  --severity med \
-  --title "API errors must be typed" \
-  --detail "Never empty catch; use instanceof Error" \
-  --scope "src/**" \
-  --json
-
-contextpilot sync --json
-```
-
-### Discussion gate
-
-```bash
-contextpilot decision open \
-  --question "Should refunds be partial or full-only?" \
-  --scope "src/billing/**" \
-  --json
-
-contextpilot status --json   # inDiscussion: true
-
-# After user answers in chat:
-contextpilot decision resolve --id dec_abc --resolution "Partial refunds up to 90 days" --json
-```
-
-### Session hooks
-
-```bash
-contextpilot context --inject --json
-contextpilot checkpoint --json
-```
-
-### Orchestration flow
-
-```bash
-contextpilot orchestrate start \
-  --goal "Implement partial refunds" \
-  --scope "src/billing/**" \
-  --json
-
-contextpilot context --inject --json
-contextpilot orchestrate advance --status complete --note "Plan complete" --json
-contextpilot orchestrate status --json
-```
-
-### Discover preview (headless readonly)
-
-```bash
-contextpilot discover --dry-run --json --no-input
-```
-
-### SRS ingest
+If your project has a `docs/srs/` folder, `contextpilot srs ingest` turns it into scoped
+knowledge rules an agent can query by file path or topic, instead of dumping the whole
+document into every agent's context window.
 
 ```bash
 contextpilot srs status --json
+contextpilot srs ingest --path docs/srs --reingest --json
+```
+
+For a greenfield project with no SRS yet, `contextpilot srs bootstrap` scaffolds `docs/srs/`
+and installs a skill (`fullstack-to-srs`) that walks an agent through writing one from the
+existing codebase.
+
+**Whenever an SRS file is edited, re-run `srs ingest --reingest`.** If you forget, ContextPilot
+still tells you — see Drift detection below.
+
+## Drift detection
+
+ContextPilot tracks the last-seen hash of everything it depends on, and reports when reality has
+moved without it. All of these show up in `contextpilot status --json` (and the relevant ones
+also in `context --inject`, which agents read every session):
+
+| Field | Meaning | Fix |
+|---|---|---|
+| `drift` | A generated file (e.g. `CLAUDE.md`) was hand-edited since ContextPilot last wrote it | `contextpilot sync` |
+| `srsDrift` | An SRS source file (`docs/srs/**/*.md`) is new or changed since the last ingest | `contextpilot srs ingest --reingest` |
+| `ruleDrift` | An ingested rule file (`.contextpilot/rules/*.md`) was hand-edited since ContextPilot last wrote it | Re-run the ingest that produced it, or hand-edit the SRS source instead |
+| `staleDecisionScopes` | A decision's `--scope` glob matches zero files (typo, or the code was deleted/renamed) | Fix or close the decision |
+| `orchestration.staleHours` | An active orchestration run has had no activity for 24+ hours | Resume it or `orchestrate cancel` |
+
+None of these block anything by default — they're visibility, not enforcement, so a human or
+agent can decide what to do about them.
+
+## CLI reference
+
+Most of these are meant to be run **by the agent**, not by you — after `setup`, you just chat.
+
+| Command | Who runs it | Description |
+|---|---|---|
+| `setup` | Human, once | One-time project setup |
+| `doctor` | Human / CI | Verify installation, hooks, and generated files |
+| `status` | Agent | Drift, pending rules, open decisions, orchestration state |
+| `context --inject` | Agent | Session-start context (focus, learnings, decisions, orchestration, drift) |
+| `learn` | Agent | Record a mistake/constraint learned this session |
+| `sync` | Agent | Regenerate every agent's instruction files |
+| `checkpoint` | Agent | End-of-task: sync + learn nudge + auto-complete orchestration if applicable |
+| `focus` | Agent | Update the current task focus |
+| `orchestrate start` / `advance` / `status` / `cancel` / `event` | Agent | Structured workflow control |
+| `decision open` / `list` / `resolve` / `reject` | Agent (resolve may need you) | Business-logic discussion gate |
+| `srs status` / `bootstrap` / `ingest` / `install` | Agent | Requirements-doc ingestion |
+| `knowledge query` / `relevant` / `show` | Agent | Look up ingested knowledge |
+| `gate check` / `precommit` / `install` | Agent / hook / git | Enforcement |
+| `refresh --auto` | Agent | Adopt newly discovered external rules/skills |
+| `watch` | Agent | Background sync; reverts gated Cursor edits |
+| `discover` / `add` / `forget` | **Human** | Import or delete rules — requires your explicit say-so |
+| `init` | Human (or `--yes` headless) | Lower-level version of `setup` |
+
+Run `contextpilot <command> --help` for flags, or add `--json` to any command for machine-readable
+output.
+
+## Configuration
+
+Project settings live in `.contextpilot/harness.config.json`. The most commonly touched options:
+
+- `gate.mode`: `"sensitive-only"` (default, only SRS-linked scopes) or `"strict"` (all
+  `gate.businessScopes` globs).
+- `srs.bootstrapMode`: `"nudge"` (default, coding isn't blocked) or `"strict"` (business-scope
+  edits denied while SRS status is `missing`; `docs/srs/**` edits stay allowed).
+- `agentContext.knowledgeMode`: `"manifest"` (default for single-file agents — points at
+  `.contextpilot/context/knowledge-index.md` instead of inlining SRS bodies) or `"inline"`.
+- `discover.paths`: override where ContextPilot looks for pre-existing global agent config.
+
+## Examples
+
+```bash
+# Record a learning
+contextpilot learn --category constraint --severity med \
+  --title "API errors must be typed" \
+  --detail "Never empty catch; use instanceof Error" \
+  --scope "src/**" --json
+
+# Open and resolve a business-logic discussion
+contextpilot decision open --question "Should refunds be partial or full-only?" \
+  --scope "src/billing/**" --json
+contextpilot decision resolve --id dec_abc --resolution "Partial refunds up to 90 days" --json
+
+# Run a structured task
+contextpilot orchestrate start --goal "Implement partial refunds" --scope "src/billing/**" --json
+contextpilot orchestrate advance --status complete --note "Plan complete" --json
+contextpilot checkpoint --json   # auto-completes the run if at its final step
+
+# Requirements ingestion
 contextpilot srs bootstrap --json
-# Agent reads .contextpilot/skills/fullstack-to-srs/SKILL.md and writes docs/srs/
 contextpilot srs ingest --path docs/srs --reingest --json
+
+# Check for anything out of sync
+contextpilot status --json
 ```
-
-`srs.bootstrapMode` defaults to `"nudge"`, so coding is not blocked. Set it to `"strict"` in `.contextpilot/harness.config.json` to deny business-scope edits while SRS status is `missing`; edits under `docs/srs/**` remain allowed.
-
-```bash
-contextpilot srs install
-# Ask your AI agent to generate the SRS into docs/srs/
-contextpilot srs ingest --path docs/srs --reingest --json
-```
-
-### Knowledge retrieval
-
-```bash
-contextpilot knowledge relevant --file src/auth/login.ts --json
-contextpilot knowledge query --query "auth password policy" --target codex --json
-contextpilot knowledge show srs-03-auth --json
-```
-
-### Refresh auto-adopt
-
-```bash
-contextpilot refresh --auto --json
-```
-
-## ContextPilot Protocol
-
-Every generated agent file includes a **ContextPilot Protocol** section instructing the agent to:
-
-1. Treat ContextPilot commands as agent-facing automation, not user-facing chores.
-2. Run `contextpilot context --inject` (or `status --json`) at session start.
-3. Start or follow **Active Orchestration** and advance it with `orchestrate advance`.
-4. Run `contextpilot learn` when mistakes/constraints are found.
-5. **Open a discussion** before changing business logic when uncertain (`decision open` -> chat -> `decision resolve`)
-6. Run `contextpilot knowledge relevant --file "<path>" --json` or `contextpilot knowledge query --query "<topic>" --json` before relying on SRS/knowledge, then read the returned source files.
-7. Run `contextpilot refresh --auto` when new external rules appear.
-8. Run `contextpilot checkpoint` (or `sync`) at logical checkpoints.
-9. Never ask the user to run CLI commands except human-gated commands (`forget`, `discover`, `add`).
-
-## SRS integration
-
-- **`srs install`**: Copies bundled `fullstack-to-srs` skill to `.contextpilot/skills/fullstack-to-srs` for all configured agents. When Claude is enabled, it also writes a Claude-native compatibility copy to `.claude/skills/fullstack-to-srs`.
-- **`srs ingest`**: Reads `docs/srs/NN-*.md`, creates scoped knowledge rules, seeds learnings from appendix QA items, then syncs agent targets.
-- **Knowledge rendering**: Claude/Codex-style single-file targets use `agentContext.knowledgeMode: "manifest"` by default, so generated files point to `.contextpilot/context/knowledge-index.md` instead of inlining large SRS bodies. Set `agentContext.knowledgeMode` to `"inline"` in `harness.config.json` to restore the old behavior.
-
-Bundled skill source: `assets/skills/fullstack-to-srs/`.
 
 ## Limitations
 
-- Agents may not always self-initiate `learn` - humans should seed learnings early.
-- **Cursor revert window** - `afterFileEdit` reverts after the edit; git pre-commit is the hard boundary.
-- **Codex / Copilot hooks** - best-effort or commit-only; verify hook APIs for your agent version.
-- Cursor User Rules and Copilot global instructions live in app settings and **cannot be auto-detected**.
-- Global agent paths may change between versions; override via `harness.config.json` -> `discover.paths`.
-- Human-gated commands exit code `3` in headless mode (`--no-input` or non-TTY), except `init --yes` and `decision resolve` with `confirmMode: "chat"`.
-- `init` without `--yes` in headless mode exits code `2` with a hint.
-- Hooks use `npx --no-install contextpilot` - global or project-local install required.
-- No backup/undo (e.g. git branch) for drift adopt.
-- Cannot enforce `learn` programmatically - protocol-only.
+- Agents may not always self-initiate `learn` — seed important learnings yourself early on.
+- Cursor's `afterFileEdit` revert has a window between edit and revert; git pre-commit is the
+  hard boundary.
+- Codex/Copilot/Windsurf hook coverage is best-effort or commit-only — verify against your
+  agent's current hook API.
+- Cursor User Rules and Copilot's global instructions live in app settings and can't be
+  auto-detected.
+- Hooks invoke `npx --no-install contextpilot`, so a global or project-local install is required
+  for hooks to fire.
+- Drift/staleness fields are visibility only — nothing is auto-reverted or auto-blocked from them.
 
 ## Exit codes
 
 | Code | Meaning |
-|------|---------|
+|---|---|
 | 0 | Success |
-| 1 | General error / status issues (includes `inDiscussion`) |
-| 2 | Missing required flag (e.g. headless `init` without `--yes`) |
-| 3 | Requires human interaction |
-| 4 | Unresolved drift (interactive sync) |
+| 1 | General error, or `status` reporting unresolved issues (drift, open discussion, etc.) |
+| 2 | Missing required flag |
+| 3 | Requires human interaction (human-gated command run headless) |
+| 4 | Unresolved drift during an interactive sync |
 
 ## Development
 
 ```bash
+git clone https://github.com/Async-Ng/contextpilot.git
+cd contextpilot
 npm install
 npm run build
+npm test
 node dist/index.js --help
 ```
+
+See `CHANGELOG.md` for release history.
