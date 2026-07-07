@@ -13,6 +13,7 @@ import {
   type Rule,
   type RuleFrontmatter,
 } from "./rule-schema";
+import { globHasMatches, type StaleScope } from "./scope-match";
 import type { HarnessState } from "./state-schema";
 
 export interface RuleFileDrift {
@@ -146,6 +147,27 @@ export function getRuleFileDrift(harnessDir: string, state: HarnessState): RuleF
   return diffHashes(known, current)
     .filter((d) => d.kind === "stale")
     .map((d) => ({ path: d.path, kind: "stale" as const }));
+}
+
+/**
+ * Flags rule scope globs that match zero files on disk - the same staleness
+ * check as `getStaleDecisionScopes`, applied to ingested rules. Rules tagged
+ * `"removed"` (a module intentionally kept as a tombstone note - see
+ * `srs.ts`'s removed-module detection) are excluded: a dead scope there is
+ * expected, not a mistake.
+ */
+export function getStaleRuleScopes(harnessDir: string): StaleScope[] {
+  const projectRoot = path.dirname(harnessDir);
+  const stale: StaleScope[] = [];
+  for (const rule of listRules(harnessDir)) {
+    if (rule.tags.includes("removed")) continue;
+    for (const scope of rule.scope) {
+      if (!globHasMatches(projectRoot, scope)) {
+        stale.push({ id: rule.id, scope });
+      }
+    }
+  }
+  return stale;
 }
 
 export function ruleIdFromPath(filePath: string): string {

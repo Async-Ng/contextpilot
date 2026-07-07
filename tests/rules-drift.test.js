@@ -144,3 +144,52 @@ test("status does not flag a decision scope that matches real files", () => {
     assert.equal(match, undefined);
   });
 });
+
+test("a module documented with the Module Removed heading is tagged removed and excluded from staleRuleScopes", () => {
+  withTempProject((cwd) => {
+    runJson(cwd, ["setup", "--no-git"]);
+    writeFile(
+      cwd,
+      "docs/srs/03-functional-requirements/module-academic-terms.md",
+      [
+        "# Section 3: Functional Requirements - Module: Academic Terms",
+        "",
+        "## Module Removed",
+        "",
+        "This module was removed entirely; superseded by plain fields on Schedule.",
+        "",
+      ].join("\n"),
+    );
+
+    const ingest = runJson(cwd, ["srs", "ingest", "--path", "docs/srs"]);
+    assert.equal(ingest.code, 0);
+
+    const rulePath = path.join(cwd, ".contextpilot", "rules", "srs-03-academic-terms.md");
+    const ruleContent = fs.readFileSync(rulePath, "utf8");
+    assert.match(ruleContent, /priority: low/);
+    assert.match(ruleContent, /tags:\s*\n\s*-\s*removed/);
+
+    const status = runJson(cwd, ["status"]);
+    const match = status.json.staleRuleScopes.find((s) => s.id === "srs-03-academic-terms");
+    assert.equal(match, undefined, "removed-tagged rule's dead scope should not be flagged");
+  });
+});
+
+test("a non-removed module with a scope matching no files is flagged in staleRuleScopes", () => {
+  withTempProject((cwd) => {
+    runJson(cwd, ["setup", "--no-git"]);
+    writeFile(
+      cwd,
+      "docs/srs/03-functional-requirements/module-ghost.md",
+      "# Section 3: Functional Requirements - Module: Ghost\n\nStill an active module, just no matching code yet.\n",
+    );
+
+    const ingest = runJson(cwd, ["srs", "ingest", "--path", "docs/srs"]);
+    assert.equal(ingest.code, 0);
+
+    const status = runJson(cwd, ["status"]);
+    const match = status.json.staleRuleScopes.find((s) => s.id === "srs-03-ghost");
+    assert.ok(match, "expected staleRuleScopes to flag the non-removed module's dead scope");
+    assert.equal(match.scope, "**/ghost*");
+  });
+});

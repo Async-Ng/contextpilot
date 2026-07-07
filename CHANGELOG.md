@@ -1,5 +1,23 @@
 ﻿# Changelog
 
+## 0.3.7 - Recognize tombstone (removed-module) SRS docs
+
+### Added
+
+- `srs ingest` now recognizes a `## Module Removed` heading at the start of a module's body as a
+  convention for "this module was intentionally kept as a historical removal note" - such rules
+  are tagged `removed` and given `priority: low` instead of being treated like ordinary active
+  knowledge. Documented in `assets/skills/fullstack-to-srs/output-layout.md`.
+- `status --json` now reports `staleRuleScopes`: ingested rules whose `scope` glob matches zero
+  files on disk (the same staleness check `staleDecisionScopes` already does for decisions), with
+  `removed`-tagged rules excluded since a dead scope there is expected, not a mistake.
+
+### Changed
+
+- Extracted a shared `globHasMatches` helper (`src/core/scope-match.ts`) used by both
+  `getStaleDecisionScopes` and the new `getStaleRuleScopes`, replacing the decision-only inline
+  `fast-glob` check.
+
 ## 0.3.6 - Rule-file drift protection and stale decision scopes
 
 ### Added

@@ -1,10 +1,10 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import fg from "fast-glob";
 import { nanoid } from "nanoid";
 import { loadConfig, resolveProjectPath } from "./config-io";
 import { decisionSchema, type Decision } from "./decision-schema";
 import { appendLine, warn, withLock, writeAtomic } from "./io";
+import { globHasMatches, type StaleScope } from "./scope-match";
 import { getStateFilePath } from "./state";
 
 export interface OpenDecisionInput {
@@ -136,10 +136,7 @@ export async function rejectDecision(
   );
 }
 
-export interface StaleDecisionScope {
-  id: string;
-  scope: string;
-}
+export type StaleDecisionScope = StaleScope;
 
 /**
  * Flags decision scope globs that match zero files on disk - a typo'd glob,
@@ -153,8 +150,7 @@ export function getStaleDecisionScopes(harnessDir: string): StaleDecisionScope[]
   for (const decision of readAllDecisions(harnessDir)) {
     if (decision.status === "rejected") continue;
     for (const scope of decision.scopes) {
-      const matches = fg.sync(scope, { cwd: projectRoot });
-      if (matches.length === 0) {
+      if (!globHasMatches(projectRoot, scope)) {
         stale.push({ id: decision.id, scope });
       }
     }

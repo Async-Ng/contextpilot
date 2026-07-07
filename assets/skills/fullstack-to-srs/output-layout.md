@@ -154,6 +154,21 @@ Module section files start with:
 
 Write business-language content only. No source file names or code identifiers.
 
+### Documenting a fully-removed module
+
+If a module was completely removed from the codebase and the decision is to keep its SRS entry
+as a historical record instead of deleting the file (for traceability - the same convention used
+elsewhere for retired business rules), start the module's body with exactly this heading:
+
+```markdown
+## Module Removed
+```
+
+followed by a short explanation of why it was removed and what replaced it, if anything. This
+exact heading is machine-recognized by `contextpilot srs ingest`: it tags the resulting rule as
+`removed` and lowers its priority, instead of treating a now-dead scope glob as a mistake. Do not
+reuse this heading for anything other than "this entire module no longer exists."
+
 ## Phase Write Schedule
 
 | Phase | Action |

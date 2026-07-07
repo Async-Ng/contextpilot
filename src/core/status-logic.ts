@@ -10,7 +10,8 @@ import {
 } from "./decisions";
 import { diffHashes, type HashEntry } from "./drift";
 import { sha256File } from "./io";
-import { getRuleFileDrift, listRules, type RuleFileDrift } from "./rules";
+import { getRuleFileDrift, getStaleRuleScopes, listRules, type RuleFileDrift } from "./rules";
+import type { StaleScope } from "./scope-match";
 import { scanDiscoverItems } from "./discover";
 import {
   getOrchestrationSummary,
@@ -43,6 +44,7 @@ export interface StatusReport {
   srsDrift: SrsFileDrift[];
   ruleDrift: RuleFileDrift[];
   staleDecisionScopes: StaleDecisionScope[];
+  staleRuleScopes: StaleScope[];
 }
 
 export function computeStatus(harnessDir: string): StatusReport {
@@ -98,6 +100,7 @@ export function computeStatus(harnessDir: string): StatusReport {
   const srsDrift = getSrsFileDrift(harnessDir);
   const ruleDrift = getRuleFileDrift(harnessDir, state);
   const staleDecisionScopes = getStaleDecisionScopes(harnessDir);
+  const staleRuleScopes = getStaleRuleScopes(harnessDir);
 
   return {
     drift,
@@ -112,6 +115,7 @@ export function computeStatus(harnessDir: string): StatusReport {
     srsDrift,
     ruleDrift,
     staleDecisionScopes,
+    staleRuleScopes,
   };
 }
 

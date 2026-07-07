@@ -15,7 +15,8 @@ export function runStatus(): void {
     report.inDiscussion ||
     report.srsDrift.length > 0 ||
     report.ruleDrift.length > 0 ||
-    report.staleDecisionScopes.length > 0;
+    report.staleDecisionScopes.length > 0 ||
+    report.staleRuleScopes.length > 0;
 
   const lines: string[] = [chalk.bold("ContextPilot status:")];
 
@@ -77,6 +78,12 @@ export function runStatus(): void {
   if (report.staleDecisionScopes.length > 0) {
     lines.push(chalk.yellow(`Stale decision scopes (${report.staleDecisionScopes.length}):`));
     for (const s of report.staleDecisionScopes) {
+      lines.push(`  ${s.id}: scope "${s.scope}" matches no files`);
+    }
+  }
+  if (report.staleRuleScopes.length > 0) {
+    lines.push(chalk.yellow(`Stale rule scopes (${report.staleRuleScopes.length}):`));
+    for (const s of report.staleRuleScopes) {
       lines.push(`  ${s.id}: scope "${s.scope}" matches no files`);
     }
   }

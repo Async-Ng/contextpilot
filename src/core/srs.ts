@@ -9,6 +9,11 @@ import { setSrsStateOnState } from "./srs-state";
 import type { SrsFileEntry } from "./state-schema";
 import { collectSrsSourceFiles, GLOBAL_SECTIONS } from "./srs-files";
 
+// Convention documented in assets/skills/fullstack-to-srs: a module kept in the SRS purely as a
+// historical "this was removed" note (rather than deleted outright) starts its body with this
+// heading, so ingest can tag it instead of treating it as ordinary active knowledge.
+const REMOVED_MODULE_MARKER = /^##\s+Module Removed\b/m;
+
 function moduleNameFromFile(filePath: string, content: string): string {
   const heading = content.match(/^# .*?Module:\s*(.+)$/m);
   if (heading?.[1]) {
@@ -176,12 +181,14 @@ export async function ingestSrs(
             `No moduleMap entry for "${moduleName}"; using fallback scope **/${moduleSlug}*`,
           );
         }
+        const isRemoved = REMOVED_MODULE_MARKER.test(content);
         const fm = defaultFrontmatter(config, {
           id,
           title: `SRS ${sectionNum}: ${moduleName}`,
           type: "knowledge",
           scope,
-          priority: "normal",
+          priority: isRemoved ? "low" : "normal",
+          tags: isRemoved ? ["removed"] : [],
         });
         writeRule(harnessDir, id, fm, content, state);
         knowledgeUpserted++;
@@ -200,12 +207,14 @@ export async function ingestSrs(
               `No moduleMap entry for "${mod.name}"; using fallback scope **/${moduleSlug}*`,
             );
           }
+          const isRemoved = REMOVED_MODULE_MARKER.test(mod.body);
           const fm = defaultFrontmatter(config, {
             id,
             title: `SRS ${sectionNum}: ${mod.name}`,
             type: "knowledge",
             scope,
-            priority: "normal",
+            priority: isRemoved ? "low" : "normal",
+            tags: isRemoved ? ["removed"] : [],
           });
           writeRule(harnessDir, id, fm, mod.body, state);
           knowledgeUpserted++;
