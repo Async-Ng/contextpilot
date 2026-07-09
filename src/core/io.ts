@@ -4,6 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import chalk from "chalk";
 import lockfile from "proper-lockfile";
+import { resolvedCommandWithSubcommand } from "./command-resolution";
 import { getGlobalOptions } from "./globals";
 
 export const EXIT_OK = 0;
@@ -54,18 +55,27 @@ export function getLegacyHarnessDir(cwd?: string): string {
 }
 
 export function requireHarness(cwd?: string): string {
-  const harnessDir = getHarnessDir(cwd);
+  const workingDir = cwd ?? getGlobalOptions().cwd;
+  const harnessDir = getHarnessDir(workingDir);
   const configPath = path.join(harnessDir, "harness.config.json");
   if (!fs.existsSync(configPath)) {
     const opts = getGlobalOptions();
+    const resolved = resolvedCommandWithSubcommand(workingDir, "setup");
     const msg = {
       error: "not_initialized",
-      hint: "Run `contextpilot setup` first to create .contextpilot/",
+      hint: `Run \`${resolved.invocation}\` first to create .contextpilot/.`,
+      resolvedCommand: resolved.command,
+      suggestedCommand: resolved.invocation,
+      source: resolved.source,
     };
     if (opts.json) {
       console.log(JSON.stringify(msg));
     } else {
-      console.error(chalk.red("ContextPilot not initialized. Run `contextpilot setup` first."));
+      console.error(
+        chalk.red(
+          `ContextPilot not initialized. Run \`${resolved.invocation}\` first.`,
+        ),
+      );
     }
     process.exit(EXIT_GENERAL);
   }

@@ -1,5 +1,27 @@
 ﻿# Changelog
 
+## 0.4.1 - CLI reliability and lightweight UX
+
+### Added
+
+- New `contextpilot start` readiness command: reports CLI resolution, initialization state, SRS /
+  orchestration readiness, and recommends the next command to run.
+- `status --fast` lightweight mode with per-stage diagnostics and partial-result reporting.
+- `sync --preview` alias for previewing sync changes before writing.
+- New UX coverage in `tests/cli-ux.test.js` for command resolution, readiness, fast status, and
+  preview sync behavior.
+
+### Changed
+
+- Shared command-resolution logic now prefers project-local installs, then the current dev checkout,
+  then `npx --no-install contextpilot`, and reuses that guidance in CLI messaging.
+- Fixed dev-repo command resolution for the published package name `@async-nguyen/contextpilot`.
+- `status` now runs through timed diagnostic stages and degrades gracefully when a section fails or
+  is skipped.
+- Sync avoids rewriting unchanged generated files and reports `written`, `unchanged`, and `skipped`
+  outputs separately.
+- Updated README guidance for local-install fallback, `start`, `status --fast`, and `sync --preview`.
+
 ## 0.4.0 - Knowledge layer optimization (multi-agent)
 
 ### Added

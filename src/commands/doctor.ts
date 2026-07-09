@@ -1,6 +1,7 @@
 ﻿import * as fs from "node:fs";
 import * as path from "node:path";
 import chalk from "chalk";
+import { resolveContextPilotCommand, resolvedCommandWithSubcommand } from "../core/command-resolution";
 import { loadConfig, resolveProjectPath } from "../core/config-io";
 import { getGlobalOptions } from "../core/globals";
 import { getHarnessDir, out, EXIT_OK } from "../core/io";
@@ -17,6 +18,9 @@ export interface DoctorReport {
   status: "ok" | "warn" | "fail";
   initialized: boolean;
   harnessDir: string;
+  resolvedCommand: string;
+  cliResolution: ReturnType<typeof resolveContextPilotCommand>;
+  suggestedCommand?: string;
   checks: DoctorCheck[];
   orchestration?: ReturnType<typeof getOrchestrationSummary>;
   srs?: SrsStatusReport;
@@ -48,7 +52,11 @@ function computeOverall(checks: DoctorCheck[]): DoctorReport["status"] {
 }
 
 function formatHuman(report: DoctorReport): string {
-  const lines = [chalk.bold("contextpilot doctor:"), `ContextPilot: ${report.harnessDir}`];
+  const lines = [
+    chalk.bold("contextpilot doctor:"),
+    `ContextPilot: ${report.harnessDir}`,
+    `CLI: ${report.resolvedCommand} (${report.cliResolution.source})`,
+  ];
   for (const item of report.checks) {
     const marker =
       item.status === "pass"
@@ -63,6 +71,9 @@ function formatHuman(report: DoctorReport): string {
     const step = report.orchestration.activeStep;
     lines.push(`Active orchestration: ${run.id} (${step?.id ?? "no step"})`);
   }
+  if (report.suggestedCommand) {
+    lines.push(`Next: ${report.suggestedCommand}`);
+  }
   lines.push(`Overall: ${report.status}`);
   return lines.join("\n");
 }
@@ -70,6 +81,7 @@ function formatHuman(report: DoctorReport): string {
 export function runDoctor(): void {
   const cwd = getGlobalOptions().cwd;
   const harnessDir = getHarnessDir(cwd);
+  const cliResolution = resolveContextPilotCommand(cwd);
   const configPath = path.join(harnessDir, "harness.config.json");
   const checks: DoctorCheck[] = [];
   const initialized = fs.existsSync(configPath);
@@ -154,6 +166,11 @@ export function runDoctor(): void {
     status: computeOverall(checks),
     initialized,
     harnessDir,
+    resolvedCommand: cliResolution.command,
+    cliResolution,
+    suggestedCommand: initialized
+      ? resolvedCommandWithSubcommand(cwd, "start").invocation
+      : resolvedCommandWithSubcommand(cwd, "setup").invocation,
     checks,
     orchestration,
     srs,

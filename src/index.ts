@@ -36,6 +36,7 @@ import {
 import { refreshHarness } from "./commands/refresh";
 import { runResolve } from "./commands/resolve";
 import { runSetup } from "./commands/setup";
+import { runStart } from "./commands/start";
 import {
   runSrsBootstrap,
   runSrsIngest,
@@ -82,6 +83,13 @@ program
   });
 
 program
+  .command("start")
+  .description("Safe-start readiness summary with the next recommended command")
+  .action(() => {
+    runStart();
+  });
+
+program
   .command("doctor")
   .description("Check local ContextPilot installation and project setup")
   .action(() => {
@@ -93,7 +101,8 @@ program
   .description("Regenerate agent target files from .contextpilot/")
   .option("--target <agent>", "Sync only one agent target")
   .option("--dry-run", "Preview without writing", false)
-  .action(async (opts: { target?: string; dryRun?: boolean }) => {
+  .option("--preview", "Alias for --dry-run with preview-focused output", false)
+  .action(async (opts: { target?: string; dryRun?: boolean; preview?: boolean }) => {
     await runSyncCommand(opts);
   });
 
@@ -123,8 +132,9 @@ program
 program
   .command("status")
   .description("Report drift, missing, external, pending, and open discussions")
-  .action(() => {
-    runStatus();
+  .option("--fast", "Return a lightweight, reliable status summary", false)
+  .action((opts: { fast?: boolean }) => {
+    runStatus(opts);
   });
 
 program

@@ -19,6 +19,7 @@ export interface SyncOptions {
 
 export interface SyncResult {
   written: string[];
+  unchanged: string[];
   skipped: string[];
   warnings: string[];
 }
@@ -389,14 +390,25 @@ function writeOutput(
   state: HarnessState,
   sourceRuleId: string | undefined,
   dryRun: boolean,
-): void {
-  if (dryRun) return;
+): "written" | "unchanged" {
+  const existing = fs.existsSync(outputPath) ? fs.readFileSync(outputPath, "utf8") : undefined;
+  if (existing === content) {
+    if (!dryRun && state.generated[outputPath]) {
+      state.generated[outputPath] = {
+        ...state.generated[outputPath],
+        sourceRuleId,
+      };
+    }
+    return "unchanged";
+  }
+  if (dryRun) return "written";
   writeAtomic(outputPath, content);
   state.generated[outputPath] = {
     hash: sha256(content),
     writtenAt: new Date().toISOString(),
     sourceRuleId,
   };
+  return "written";
 }
 
 function cleanupStaleCursorFiles(
@@ -484,6 +496,7 @@ export async function runSync(
   return withLock(statePath, () => {
     const state = loadState(harnessDir);
     const written: string[] = [];
+    const unchanged: string[] = [];
     const skipped: string[] = [];
     const warnings: string[] = [];
     const dryRun = options.dryRun ?? false;
@@ -517,8 +530,8 @@ export async function runSync(
         if (hasDrift) {
           warn(`Overwriting drifted file: ${knowledgeIndexPath}`);
         }
-        writeOutput(knowledgeIndexPath, content, state, undefined, dryRun);
-        written.push(knowledgeIndexPath);
+        const action = writeOutput(knowledgeIndexPath, content, state, undefined, dryRun);
+        (action === "written" ? written : unchanged).push(knowledgeIndexPath);
       }
     } else {
       cleanupStaleKnowledgeIndex(knowledgeIndexPath, state, dryRun);
@@ -547,8 +560,8 @@ export async function runSync(
           if (hasDrift) {
             warn(`Overwriting drifted file: ${fullPath}`);
           }
-          writeOutput(fullPath, content, state, undefined, dryRun);
-          written.push(fullPath);
+          const action = writeOutput(fullPath, content, state, undefined, dryRun);
+          (action === "written" ? written : unchanged).push(fullPath);
         }
       } else {
         const fullPath = path.join(projectRoot, outputRel);
@@ -567,8 +580,8 @@ export async function runSync(
           config.agentContext.maxMainFileChars,
           warnings,
         );
-        writeOutput(fullPath, content, state, undefined, dryRun);
-        written.push(fullPath);
+        const action = writeOutput(fullPath, content, state, undefined, dryRun);
+        (action === "written" ? written : unchanged).push(fullPath);
       }
     }
 
@@ -596,7 +609,7 @@ export async function runSync(
       saveState(harnessDir, state);
     }
 
-    return { written, skipped, warnings };
+    return { written, unchanged, skipped, warnings };
   });
 }
 

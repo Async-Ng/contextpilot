@@ -1,24 +1,43 @@
-﻿import chalk from "chalk";
+import * as path from "node:path";
+import chalk from "chalk";
 import { EXIT_OK, out, requireHarness } from "../core/io";
-import { computeStatus } from "../core/status-logic";
+import {
+  computeStatus,
+  getStatusActionHint,
+  getStatusConfidenceSummary,
+  hasStatusIssues,
+  type StatusReport,
+} from "../core/status-logic";
 
-export function runStatus(): void {
+export interface StatusCommandOptions {
+  fast?: boolean;
+}
+
+function formatDiagnostics(report: StatusReport): string[] {
+  if (report.diagnostics.sections.length === 0) {
+    return [];
+  }
+
+  const lines = [chalk.dim(`Mode: ${report.mode}`), chalk.dim("Diagnostics:")];
+  for (const section of report.diagnostics.sections) {
+    const suffix = section.reason ? ` - ${section.reason}` : "";
+    lines.push(
+      chalk.dim(
+        `  ${section.stage}: ${section.status} (${section.elapsedMs}ms)${suffix}`,
+      ),
+    );
+  }
+  return lines;
+}
+
+export function runStatus(options: StatusCommandOptions = {}): void {
   const harnessDir = requireHarness();
-  const report = computeStatus(harnessDir);
-
-  const hasIssues =
-    report.drift.length > 0 ||
-    report.missing.length > 0 ||
-    report.newExternal.length > 0 ||
-    report.newSkills.length > 0 ||
-    report.pending.length > 0 ||
-    report.inDiscussion ||
-    report.srsDrift.length > 0 ||
-    report.ruleDrift.length > 0 ||
-    report.staleDecisionScopes.length > 0 ||
-    report.staleRuleScopes.length > 0;
+  const report = computeStatus(harnessDir, { fast: options.fast });
+  const projectRoot = path.dirname(harnessDir);
+  const hasIssues = hasStatusIssues(report);
 
   const lines: string[] = [chalk.bold("ContextPilot status:")];
+  lines.push(chalk.dim(getStatusConfidenceSummary(report)));
 
   if (report.drift.length > 0) {
     lines.push(chalk.yellow(`Drift (${report.drift.length}):`));
@@ -56,12 +75,12 @@ export function runStatus(): void {
       lines.push(`  ${d.id}: ${d.question}`);
     }
   }
-  if (report.srs.requiredForGreenfield && report.srs.status === "missing") {
-    lines.push(chalk.yellow(`SRS missing: run contextpilot srs bootstrap --json (${report.srs.path})`));
-  } else if (report.srs.status === "bootstrapped") {
-    lines.push(chalk.cyan(`SRS bootstrapped: write SRS in ${report.srs.path}, then run srs ingest.`));
+  if (report.srs?.requiredForGreenfield && report.srs.status === "missing") {
+    lines.push(chalk.yellow(`SRS missing: run ${getStatusActionHint(report, projectRoot)}`));
+  } else if (report.srs?.status === "bootstrapped") {
+    lines.push(chalk.cyan(`SRS bootstrapped: write SRS in ${report.srs.path}, then ingest it.`));
   }
-  if (report.srsDrift.length > 0) {
+  if (report.srsDrift.length > 0 && report.srs) {
     lines.push(chalk.yellow(`SRS source drift (${report.srsDrift.length}):`));
     for (const d of report.srsDrift) {
       lines.push(`  ${d.kind === "new" ? "[new] " : "[stale] "}${d.path}`);
@@ -73,7 +92,7 @@ export function runStatus(): void {
     for (const d of report.ruleDrift) {
       lines.push(`  [${d.kind}] ${d.path}`);
     }
-    lines.push(`  -> these rule files were hand-edited since ContextPilot last wrote them; the next \`srs ingest\` will overwrite them.`);
+    lines.push("  -> these rule files were hand-edited since ContextPilot last wrote them.");
   }
   if (report.staleDecisionScopes.length > 0) {
     lines.push(chalk.yellow(`Stale decision scopes (${report.staleDecisionScopes.length}):`));
@@ -96,15 +115,28 @@ export function runStatus(): void {
     if ((report.orchestration.staleHours ?? 0) > 24) {
       lines.push(
         chalk.yellow(
-          `  Warning: no activity in ${Math.floor(report.orchestration.staleHours ?? 0)}h - run may be abandoned. Resume it or cancel with \`contextpilot orchestrate cancel\`.`,
+          `  Warning: no activity in ${Math.floor(report.orchestration.staleHours ?? 0)}h - run may be abandoned.`,
         ),
       );
     }
+  }
+  if (report.diagnostics.partial) {
+    lines.push(
+      chalk.yellow(
+        `Partial status only. Try ${getStatusActionHint(report, projectRoot)} for a quicker fallback.`,
+      ),
+    );
   }
   if (!hasIssues && !report.orchestration.activeRun) {
     lines.push(chalk.green("All clean."));
   }
 
-  out(lines.join("\n"), report);
+  lines.push(...formatDiagnostics(report));
+
+  out(lines.join("\n"), {
+    ...report,
+    suggestedCommand: getStatusActionHint(report, projectRoot),
+    confidenceSummary: getStatusConfidenceSummary(report),
+  });
   process.exit(hasIssues ? 1 : EXIT_OK);
 }

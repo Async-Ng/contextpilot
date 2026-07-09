@@ -196,7 +196,7 @@ export function resolveHarnessCommand(projectRoot: string): string {
       const raw: unknown = JSON.parse(fs.readFileSync(localPkg, "utf8"));
       if (
         isPlainObject(raw) &&
-        raw.name === "contextpilot"
+        (raw.name === "contextpilot" || raw.name === "@async-nguyen/contextpilot")
       ) {
         return `node "${localDist.replace(/\\/g, "/")}"`;
       }

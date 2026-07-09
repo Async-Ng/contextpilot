@@ -10,16 +10,18 @@ import { computeStatus } from "../core/status-logic";
 export interface SyncCommandOptions {
   target?: string;
   dryRun?: boolean;
+  preview?: boolean;
 }
 
 export async function runSyncCommand(options: SyncCommandOptions): Promise<void> {
   const harnessDir = requireHarness();
-  const status = computeStatus(harnessDir);
+  const preview = options.preview === true || options.dryRun === true;
+  const status = computeStatus(harnessDir, { fast: preview });
 
   if (
     status.drift.length > 0 &&
     isInteractive() &&
-    !options.dryRun
+    !preview
   ) {
     out(
       `Unresolved drift in ${status.drift.length} file(s). Run \`contextpilot refresh\` first.`,
@@ -30,17 +32,18 @@ export async function runSyncCommand(options: SyncCommandOptions): Promise<void>
 
   const result = await runSync(harnessDir, {
     target: options.target,
-    dryRun: options.dryRun,
-    allowDriftOverwrite: !isInteractive() || options.dryRun === true,
+    dryRun: preview,
+    allowDriftOverwrite: !isInteractive() || preview,
   });
 
   out(
-    options.dryRun
-      ? `Dry run: would write ${result.written.length} file(s).`
-      : `Synced ${result.written.length} file(s).`,
+    preview
+      ? `Preview: ${result.written.length} file(s) would change, ${result.unchanged.length} already up to date.`
+      : `Synced ${result.written.length} file(s); ${result.unchanged.length} unchanged.`,
     {
-      status: options.dryRun ? "dry_run" : "synced",
+      status: preview ? "preview" : "synced",
       written: result.written,
+      unchanged: result.unchanged,
       skipped: result.skipped,
       warnings: result.warnings,
     },

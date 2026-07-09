@@ -43,13 +43,14 @@ edits can't slip through unnoticed even without agent-native hooks.
 npm install -g @async-nguyen/contextpilot
 ```
 
-(Or add it as a dev dependency and use `npx contextpilot ...` instead of a global install.)
+(Or add it as a dev dependency and use `npx --no-install contextpilot ...` instead of a global install.)
 
 ## Quick start
 
 ```bash
 cd your-project
 contextpilot setup
+contextpilot start
 ```
 
 That's it. `setup` auto-detects which agents you use, scaffolds `.contextpilot/`, installs hooks
@@ -61,6 +62,13 @@ For headless/CI setup with no prompts:
 
 ```bash
 contextpilot setup --json --no-input
+```
+
+If the global binary is not installed but the repo has a local install, ContextPilot now reports the
+exact fallback command to use, for example:
+
+```bash
+npx --no-install contextpilot doctor
 ```
 
 ## What `setup` does
@@ -157,18 +165,38 @@ also in `context --inject`, which agents read every session):
 None of these block anything by default — they're visibility, not enforcement, so a human or
 agent can decide what to do about them.
 
+## Safe start and lightweight commands
+
+Use `contextpilot start` for a one-command readiness check. It reports how the CLI was resolved
+(project-local package, dev repo, or `npx --no-install` fallback), whether the repo is initialized,
+the current SRS/orchestration state, and the next recommended command.
+
+For small technical tasks, use the lightweight path:
+
+```bash
+contextpilot start
+contextpilot status --fast
+contextpilot sync --preview
+```
+
+- `status --fast` skips expensive scans and returns a minimal, reliable summary.
+- `sync --preview` shows what would change without rewriting files.
+- `orchestrate start` is still the structured workflow command for non-trivial tasks; it is
+  separate from the new top-level `start` readiness command.
+
 ## CLI reference
 
 Most of these are meant to be run **by the agent**, not by you — after `setup`, you just chat.
 
 | Command | Who runs it | Description |
 |---|---|---|
+| `start` | Human / agent | Safe-start readiness summary and next-step recommendation |
 | `setup` | Human, once | One-time project setup |
 | `doctor` | Human / CI | Verify installation, hooks, and generated files |
-| `status` | Agent | Drift, pending rules, open decisions, orchestration state |
+| `status` | Agent | Drift, pending rules, open decisions, orchestration state (`--fast` for lightweight mode) |
 | `context --inject` | Agent | Session-start context (focus, learnings, decisions, orchestration, drift) |
 | `learn` | Agent | Record a mistake/constraint learned this session |
-| `sync` | Agent | Regenerate every agent's instruction files |
+| `sync` | Agent | Regenerate every agent's instruction files (`--preview` to inspect first) |
 | `checkpoint` | Agent | End-of-task: sync + learn nudge + auto-complete orchestration if applicable |
 | `focus` | Agent | Update the current task focus |
 | `orchestrate start` / `advance` / `status` / `cancel` / `event` | Agent | Structured workflow control |
@@ -259,6 +287,11 @@ contextpilot checkpoint --json   # auto-completes the run if at its final step
 contextpilot srs bootstrap --json
 contextpilot srs ingest --path docs/srs --reingest --json
 
+# Quick readiness / lightweight flow
+contextpilot start
+contextpilot status --fast
+contextpilot sync --preview
+
 # Check for anything out of sync
 contextpilot status --json
 ```
@@ -272,8 +305,8 @@ contextpilot status --json
   agent's current hook API.
 - Cursor User Rules and Copilot's global instructions live in app settings and can't be
   auto-detected.
-- Hooks invoke `npx --no-install contextpilot`, so a global or project-local install is required
-  for hooks to fire.
+- Hooks prefer a project-local install when available, then fall back to the current dev checkout,
+  then to `npx --no-install contextpilot`.
 - Drift/staleness fields are visibility only — nothing is auto-reverted or auto-blocked from them.
 
 ## Exit codes

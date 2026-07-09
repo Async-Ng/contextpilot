@@ -38,6 +38,7 @@ export async function runCheckpoint(): Promise<void> {
         message: `Checkpoint synced ${result.written.length} file(s).`,
         data: {
           written: result.written.length,
+          unchanged: result.unchanged.length,
           skipped: result.skipped.length,
           warnings: result.warnings.length,
         },
@@ -76,6 +77,7 @@ export async function runCheckpoint(): Promise<void> {
       synced: true,
       nudge: CHECKPOINT_NUDGE,
       written: result.written,
+      unchanged: result.unchanged,
       skipped: result.skipped,
       warnings: result.warnings,
       orchestration,
