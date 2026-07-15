@@ -1,4 +1,21 @@
-﻿# Changelog
+# Changelog
+
+## 0.4.2 - Light profile defaults
+
+### Added
+
+- New light-profile config defaults: `profile`, `hooks.infrastructureFailure`,
+  `orchestration.autoStart`, `agentContext.protocolLevel`, and `srs.autoIngestOnDrift`.
+- Safe SRS drift auto-ingest for `status`, `context --inject`, and `sync` when no rule-file drift
+  conflict would be overwritten.
+
+### Changed
+
+- **Default UX is now light**: agent files use a stub protocol and index-only global knowledge,
+  small technical tasks do not require orchestration, and hook infrastructure failures warn-open.
+- Sync preview now includes generated-size deltas.
+- README guidance now covers when ContextPilot is worth it, the small-task fast path, and how to
+  opt into `"profile": "strict"` for team/governance workflows.
 
 ## 0.4.1 - CLI reliability and lightweight UX
 
@@ -8,10 +25,6 @@
   orchestration readiness, and recommends the next command to run.
 - `status --fast` lightweight mode with per-stage diagnostics and partial-result reporting.
 - `sync --preview` alias for previewing sync changes before writing.
-- New light-profile config defaults: `profile`, `hooks.infrastructureFailure`,
-  `orchestration.autoStart`, `agentContext.protocolLevel`, and `srs.autoIngestOnDrift`.
-- Safe SRS drift auto-ingest for `status`, `context --inject`, and `sync` when no rule-file drift
-  conflict would be overwritten.
 - New UX coverage in `tests/cli-ux.test.js` for command resolution, readiness, fast status, and
   preview sync behavior.
 
@@ -23,9 +36,7 @@
 - `status` now runs through timed diagnostic stages and degrades gracefully when a section fails or
   is skipped.
 - Sync avoids rewriting unchanged generated files and reports `written`, `unchanged`, and `skipped`
-  outputs separately, plus generated-size deltas in preview output.
-- **Default UX is now light**: agent files use a stub protocol and index-only global knowledge,
-  small technical tasks do not require orchestration, and hook infrastructure failures warn-open.
+  outputs separately.
 - Updated README guidance for local-install fallback, `start`, `status --fast`, and `sync --preview`.
 
 ## 0.4.0 - Knowledge layer optimization (multi-agent)

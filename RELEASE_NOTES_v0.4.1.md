@@ -11,8 +11,6 @@ do not need the full orchestration overhead.
 - Added `contextpilot start` for one-command readiness checks
 - Added `contextpilot status --fast` for lightweight, reliable status output
 - Added `contextpilot sync --preview` to inspect changes before writing
-- Added a light default profile for small teams and small tasks
-- Added safe SRS drift auto-ingest for `status`, `context --inject`, and `sync`
 - Improved CLI resolution and fallback guidance for local installs
 - Reduced noisy sync rewrites when generated output is unchanged
 
@@ -24,10 +22,6 @@ do not need the full orchestration overhead.
 - `status` now records per-stage diagnostics and can return partial results more gracefully
 - `doctor` includes CLI resolution and better next-step guidance
 - Sync output now distinguishes `written`, `unchanged`, and `skipped` files
-- Generated agent files now default to a stub protocol plus knowledge-index pointers instead of
-  repeating long global SRS summaries everywhere
-- Hook infrastructure failures such as an uninitialized project warn-open in the light profile,
-  while real gate denials still block
 - README and CLI UX coverage were updated to reflect the new lightweight workflow
 
 ### Recommended lightweight flow
@@ -42,7 +36,6 @@ contextpilot sync --preview
 
 - No migration is required beyond updating to `0.4.1`
 - Existing `orchestrate start` behavior is unchanged when invoked directly
-- Set `"profile": "strict"` to keep stricter, more prescriptive team defaults
 - `start` is a new top-level readiness command and does not replace orchestration
 
 ## Tiếng Việt
