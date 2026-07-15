@@ -5,12 +5,15 @@ import {
   defaultAgentContextConfig,
   defaultConfig,
   defaultGateConfig,
+  defaultHooksConfig,
   defaultOrchestrationConfig,
   gateConfigSchema,
   harnessConfigSchema,
+  hooksConfigSchema,
   type AgentContextConfig,
   type GateConfig,
   type HarnessConfig,
+  type HooksConfig,
   orchestrationConfigSchema,
   type OrchestrationConfig,
 } from "./config";
@@ -37,6 +40,14 @@ function mergeOrchestrationConfig(raw: unknown): OrchestrationConfig {
     ...defaultOrchestrationConfig(),
     ...partial,
   });
+}
+
+function mergeHooksConfig(raw: unknown): HooksConfig {
+  if (raw === undefined || raw === null) {
+    return defaultHooksConfig();
+  }
+  const partial = hooksConfigSchema.partial().parse(raw);
+  return hooksConfigSchema.parse({ ...defaultHooksConfig(), ...partial });
 }
 
 function mergeAgentContextConfig(raw: unknown): AgentContextConfig {
@@ -113,7 +124,68 @@ function normalizeConfig(raw: unknown): HarnessConfig {
     agentContext: mergeAgentContextConfig(record.agentContext),
     gate: mergeGateConfig(record.gate),
     orchestration: mergeOrchestrationConfig(record.orchestration),
+    hooks: mergeHooksConfig(record.hooks),
   };
+  if (record.profile === "strict") {
+    const agentContext = merged.agentContext as AgentContextConfig;
+    const orchestration = merged.orchestration as OrchestrationConfig;
+    const hooks = merged.hooks as HooksConfig;
+    const gate = merged.gate as GateConfig;
+    const rawAgentContext =
+      typeof record.agentContext === "object" &&
+      record.agentContext !== null &&
+      !Array.isArray(record.agentContext)
+        ? (record.agentContext as Record<string, unknown>)
+        : {};
+    const rawOrchestration =
+      typeof record.orchestration === "object" &&
+      record.orchestration !== null &&
+      !Array.isArray(record.orchestration)
+        ? (record.orchestration as Record<string, unknown>)
+        : {};
+    const rawHooks =
+      typeof record.hooks === "object" &&
+      record.hooks !== null &&
+      !Array.isArray(record.hooks)
+        ? (record.hooks as Record<string, unknown>)
+        : {};
+    const rawGate =
+      typeof record.gate === "object" &&
+      record.gate !== null &&
+      !Array.isArray(record.gate)
+        ? (record.gate as Record<string, unknown>)
+        : {};
+    merged.agentContext = {
+      ...agentContext,
+      protocolLevel:
+        rawAgentContext.protocolLevel === undefined
+          ? "standard"
+          : agentContext.protocolLevel,
+      globalKnowledgePolicy:
+        rawAgentContext.globalKnowledgePolicy === undefined
+          ? "summary"
+          : agentContext.globalKnowledgePolicy,
+    };
+    merged.orchestration = {
+      ...orchestration,
+      autoStart:
+        rawOrchestration.autoStart === undefined
+          ? "always"
+          : orchestration.autoStart,
+    };
+    merged.hooks = {
+      ...hooks,
+      infrastructureFailure:
+        rawHooks.infrastructureFailure === undefined
+          ? "fail-closed"
+          : hooks.infrastructureFailure,
+    };
+    merged.gate = {
+      ...gate,
+      failClosed:
+        rawGate.failClosed === undefined ? true : gate.failClosed,
+    };
+  }
   if (typeof record.agents === "undefined") {
     merged.agents = defaults.agents;
   }

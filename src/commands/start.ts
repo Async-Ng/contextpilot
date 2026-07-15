@@ -38,7 +38,7 @@ export function runStart(): void {
     process.exit(EXIT_OK);
   }
 
-  loadConfig(harnessDir);
+  const config = loadConfig(harnessDir);
   const report = computeStatus(harnessDir, { fast: true });
   const projectRoot = path.dirname(harnessDir);
   const suggestedCommand = getStatusActionHint(report, projectRoot);
@@ -50,6 +50,8 @@ export function runStart(): void {
     chalk.bold("ContextPilot start:"),
     `CLI resolution: ${resolved.command} (${resolved.source})`,
     `State: ${ready ? "ready" : "action needed"}`,
+    `Profile: ${config.profile}`,
+    `Hook infrastructure failures: ${config.hooks.infrastructureFailure}`,
     `Confidence: ${getStatusConfidenceSummary(report)}`,
   ];
   if (report.srs) {
@@ -68,6 +70,8 @@ export function runStart(): void {
     cliResolution: resolved,
     harnessDir,
     confidenceSummary: getStatusConfidenceSummary(report),
+    profile: config.profile,
+    hooks: config.hooks,
     suggestedCommand,
     readiness: {
       generated: report.generated,

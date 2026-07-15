@@ -1,5 +1,5 @@
 ﻿/** ContextPilot Protocol: agent-facing automation contract. */
-export const HARNESS_PROTOCOL = `## ContextPilot Protocol - invisible to the user, mandatory for you
+export const STANDARD_HARNESS_PROTOCOL = `## ContextPilot Protocol - invisible to the user, mandatory for you
 - The human should be able to chat normally about product/features. Do not ask the human to run
   ContextPilot commands unless the command is explicitly human-gated. You run agent-safe ContextPilot
   commands yourself through the shell/tool interface.
@@ -55,3 +55,17 @@ export const HARNESS_PROTOCOL = `## ContextPilot Protocol - invisible to the use
   \`orchestrate advance\` for that step once it is actually done.
 - Do NOT run \`contextpilot forget\`, \`discover\`, \`add\`, or pass \`--force\`. Those need a
   human. Ask the user only when one of those commands is truly required.`;
+
+export const STUB_HARNESS_PROTOCOL = `## ContextPilot Protocol - lightweight default
+- Keep ContextPilot invisible unless the user asks about it. Run agent-safe commands yourself.
+- At session start, prefer \`contextpilot status --fast --json\` or \`contextpilot context --inject --json\`.
+- For small technical tasks (CI, dead code, rename, docs typo), do not start orchestration. Work normally, then run \`contextpilot sync --preview\` only if generated agent/context files may be affected.
+- Start orchestration only for non-trivial work: multi-file/module changes, business logic, migrations, risky refactors, or when the user asks for a structured workflow.
+- If there is Active Orchestration, follow its current step and advance it when the step is done.
+- If there are Open Decisions, ask the user the product/business question before changing scoped code.
+- Agent files are index-first. Use \`contextpilot knowledge relevant --file "<path>" --task code --limit 2 --json\`, then \`contextpilot knowledge show <id>\` for at most 1-2 relevant items.
+- Treat non-empty SRS drift as required-before-done for business/spec work; ContextPilot may auto-ingest safe SRS drift, but if it reports a conflict, run the suggested ingest manually.
+- Record durable mistakes or constraints with \`contextpilot learn ... --json\` when the lesson will matter later.
+- Do not run \`contextpilot forget\`, \`discover\`, \`add\`, or pass \`--force\` without explicit human approval.`;
+
+export const HARNESS_PROTOCOL = STANDARD_HARNESS_PROTOCOL;

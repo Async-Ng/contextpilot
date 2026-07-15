@@ -108,5 +108,14 @@ test("sync --preview reports unchanged files instead of rewriting them", () => {
     assert.equal(result.json.status, "preview");
     assert.equal(result.json.written.length, 0);
     assert.ok(result.json.unchanged.length > 0);
+    assert.equal(typeof result.json.sizeSummary.deltaBytes, "number");
+  });
+});
+
+test("gate precommit fail-opens when ContextPilot is not initialized", () => {
+  withTempProject((cwd) => {
+    const result = runJson(cwd, ["gate", "precommit"]);
+
+    assert.equal(result.code, 0);
   });
 });

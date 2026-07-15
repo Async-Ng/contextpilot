@@ -6,7 +6,7 @@ import { readFocus } from "./context";
 import { sha256, sha256File, warn, withLock, writeAtomic } from "./io";
 import { formatLearningsSection, readActiveLearnings } from "./memory";
 import { buildGlobalKnowledgeSummary } from "./knowledge-summary";
-import { HARNESS_PROTOCOL } from "./protocol";
+import { STANDARD_HARNESS_PROTOCOL, STUB_HARNESS_PROTOCOL } from "./protocol";
 import { filterRulesForAgent, listRules, sortRules, type Rule } from "./rules";
 import { getSrsStatus } from "./srs-state";
 import { getStateFilePath, loadState, saveState, type HarnessState } from "./state";
@@ -22,6 +22,18 @@ export interface SyncResult {
   unchanged: string[];
   skipped: string[];
   warnings: string[];
+  sizeSummary: {
+    changedFiles: number;
+    currentBytes: number;
+    nextBytes: number;
+    deltaBytes: number;
+  };
+}
+
+function protocolForConfig(config: HarnessConfig): string {
+  return config.agentContext.protocolLevel === "stub"
+    ? STUB_HARNESS_PROTOCOL
+    : STANDARD_HARNESS_PROTOCOL;
 }
 
 function projectRelativePath(projectRoot: string, fullPath: string): string {
@@ -241,7 +253,7 @@ function buildSingleFileContent(
     );
   }
 
-  sections.push("# ContextPilot Protocol", "", HARNESS_PROTOCOL, "");
+  sections.push("# ContextPilot Protocol", "", protocolForConfig(config), "");
   return sections.join("\n");
 }
 
@@ -363,7 +375,7 @@ function buildCursorFiles(
   files.set(
     "_contextpilot.mdc",
     mdcFrontmatter("ContextPilot protocol", ["**/*"], true) +
-      `# ContextPilot Protocol\n\n${HARNESS_PROTOCOL}\n`,
+      `# ContextPilot Protocol\n\n${protocolForConfig(config)}\n`,
   );
 
   return files;
@@ -409,6 +421,21 @@ function writeOutput(
     sourceRuleId,
   };
   return "written";
+}
+
+function measureSizeChange(
+  outputPath: string,
+  content: string,
+  summary: SyncResult["sizeSummary"],
+): void {
+  const existing = fs.existsSync(outputPath) ? fs.readFileSync(outputPath, "utf8") : "";
+  if (existing === content) {
+    return;
+  }
+  summary.changedFiles++;
+  summary.currentBytes += Buffer.byteLength(existing, "utf8");
+  summary.nextBytes += Buffer.byteLength(content, "utf8");
+  summary.deltaBytes = summary.nextBytes - summary.currentBytes;
 }
 
 function cleanupStaleCursorFiles(
@@ -499,6 +526,12 @@ export async function runSync(
     const unchanged: string[] = [];
     const skipped: string[] = [];
     const warnings: string[] = [];
+    const sizeSummary: SyncResult["sizeSummary"] = {
+      changedFiles: 0,
+      currentBytes: 0,
+      nextBytes: 0,
+      deltaBytes: 0,
+    };
     const dryRun = options.dryRun ?? false;
     const allowDrift = options.allowDriftOverwrite ?? true;
     const projectRoot = path.dirname(harnessDir);
@@ -530,6 +563,7 @@ export async function runSync(
         if (hasDrift) {
           warn(`Overwriting drifted file: ${knowledgeIndexPath}`);
         }
+        measureSizeChange(knowledgeIndexPath, content, sizeSummary);
         const action = writeOutput(knowledgeIndexPath, content, state, undefined, dryRun);
         (action === "written" ? written : unchanged).push(knowledgeIndexPath);
       }
@@ -560,6 +594,7 @@ export async function runSync(
           if (hasDrift) {
             warn(`Overwriting drifted file: ${fullPath}`);
           }
+          measureSizeChange(fullPath, content, sizeSummary);
           const action = writeOutput(fullPath, content, state, undefined, dryRun);
           (action === "written" ? written : unchanged).push(fullPath);
         }
@@ -580,6 +615,7 @@ export async function runSync(
           config.agentContext.maxMainFileChars,
           warnings,
         );
+        measureSizeChange(fullPath, content, sizeSummary);
         const action = writeOutput(fullPath, content, state, undefined, dryRun);
         (action === "written" ? written : unchanged).push(fullPath);
       }
@@ -609,7 +645,7 @@ export async function runSync(
       saveState(harnessDir, state);
     }
 
-    return { written, unchanged, skipped, warnings };
+    return { written, unchanged, skipped, warnings, sizeSummary };
   });
 }
 

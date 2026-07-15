@@ -133,8 +133,8 @@ program
   .command("status")
   .description("Report drift, missing, external, pending, and open discussions")
   .option("--fast", "Return a lightweight, reliable status summary", false)
-  .action((opts: { fast?: boolean }) => {
-    runStatus(opts);
+  .action(async (opts: { fast?: boolean }) => {
+    await runStatus(opts);
   });
 
 program
@@ -357,9 +357,9 @@ program
   .command("context")
   .description("Session context for agent hooks")
   .option("--inject", "Output focus, learnings, and open decisions for session start")
-  .action((opts: { inject?: boolean }) => {
+  .action(async (opts: { inject?: boolean }) => {
     if (opts.inject) {
-      runContextInject();
+      await runContextInject();
       return;
     }
     exitMissingFlag("--inject", "Use `context --inject` for session hook output");

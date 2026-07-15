@@ -2,6 +2,7 @@
 import * as path from "node:path";
 import chalk from "chalk";
 import { resolveContextPilotCommand, resolvedCommandWithSubcommand } from "../core/command-resolution";
+import type { HooksConfig, Profile } from "../core/config";
 import { loadConfig, resolveProjectPath } from "../core/config-io";
 import { getGlobalOptions } from "../core/globals";
 import { getHarnessDir, out, EXIT_OK } from "../core/io";
@@ -21,6 +22,8 @@ export interface DoctorReport {
   resolvedCommand: string;
   cliResolution: ReturnType<typeof resolveContextPilotCommand>;
   suggestedCommand?: string;
+  profile?: Profile;
+  hooks?: HooksConfig;
   checks: DoctorCheck[];
   orchestration?: ReturnType<typeof getOrchestrationSummary>;
   srs?: SrsStatusReport;
@@ -71,6 +74,10 @@ function formatHuman(report: DoctorReport): string {
     const step = report.orchestration.activeStep;
     lines.push(`Active orchestration: ${run.id} (${step?.id ?? "no step"})`);
   }
+  if (report.profile && report.hooks) {
+    lines.push(`Profile: ${report.profile}`);
+    lines.push(`Hook infrastructure failures: ${report.hooks.infrastructureFailure}`);
+  }
   if (report.suggestedCommand) {
     lines.push(`Next: ${report.suggestedCommand}`);
   }
@@ -107,9 +114,13 @@ export function runDoctor(): void {
 
   let orchestration: DoctorReport["orchestration"];
   let srs: DoctorReport["srs"];
+  let profile: DoctorReport["profile"];
+  let hooks: DoctorReport["hooks"];
 
   if (initialized) {
     const config = loadConfig(harnessDir);
+    profile = config.profile;
+    hooks = config.hooks;
     const projectRoot = path.dirname(harnessDir);
 
     for (const agent of config.agents) {
@@ -172,6 +183,8 @@ export function runDoctor(): void {
       ? resolvedCommandWithSubcommand(cwd, "start").invocation
       : resolvedCommandWithSubcommand(cwd, "setup").invocation,
     checks,
+    profile,
+    hooks,
     orchestration,
     srs,
   };

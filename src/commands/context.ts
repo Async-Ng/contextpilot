@@ -15,6 +15,7 @@ import {
   getOrchestrationSummary,
   type OrchestrationSummary,
 } from "../core/orchestration";
+import { autoIngestSrsDrift, type AutoIngestSrsResult } from "../core/srs-auto";
 import { getSrsFileDrift, type SrsFileDrift } from "../core/srs-state";
 
 /** Max learnings in session inject - keep hooks fast. */
@@ -35,6 +36,7 @@ export interface ContextInjectPayload {
   openDecisions: Decision[];
   orchestration: OrchestrationSummary;
   srsDrift: SrsFileDrift[];
+  autoIngest: AutoIngestSrsResult;
   suggestedKnowledge: Array<{ id: string; title: string; hint: string }>;
   text: string;
 }
@@ -116,6 +118,26 @@ function formatSrsDriftSection(drift: SrsFileDrift[]): string {
   return lines.join("\n");
 }
 
+function formatAutoIngestSection(autoIngest: AutoIngestSrsResult): string {
+  if (autoIngest.status === "ingested") {
+    return [
+      "## SRS Auto-Ingest",
+      "",
+      `Updated ${autoIngest.drift.length} changed SRS source file(s) before injecting context.`,
+    ].join("\n");
+  }
+  if (autoIngest.status !== "skipped" && autoIngest.status !== "failed") {
+    return "";
+  }
+  return [
+    "## SRS Auto-Ingest Skipped",
+    "",
+    `Status: ${autoIngest.status}`,
+    `Reason: ${autoIngest.reason ?? "unknown"}`,
+    "Run `contextpilot srs ingest --reingest --json` after resolving the issue.",
+  ].join("\n");
+}
+
 function formatSuggestedKnowledgeSection(
   items: Array<{ id: string; title: string; hint: string }>,
 ): string {
@@ -181,6 +203,7 @@ function formatInjectText(
   openDecisions: Decision[],
   orchestration: OrchestrationSummary,
   srsDrift: SrsFileDrift[],
+  autoIngest: AutoIngestSrsResult,
   suggestedKnowledge: Array<{ id: string; title: string; hint: string }>,
 ): string {
   const sections: string[] = ["# Harness Session Context", ""];
@@ -216,6 +239,11 @@ function formatInjectText(
     sections.push(srsDriftText, "");
   }
 
+  const autoIngestText = formatAutoIngestSection(autoIngest);
+  if (autoIngestText) {
+    sections.push(autoIngestText, "");
+  }
+
   const suggestedText = formatSuggestedKnowledgeSection(suggestedKnowledge);
   if (suggestedText) {
     sections.push(suggestedText, "");
@@ -228,7 +256,8 @@ function formatInjectText(
  * Build session-inject payload for hooks (Cursor sessionStart, Claude SessionStart).
  * Read-only - no network or codebase scan.
  */
-export function formatInjectPayload(harnessDir: string): ContextInjectPayload {
+export async function formatInjectPayload(harnessDir: string): Promise<ContextInjectPayload> {
+  const autoIngest = await autoIngestSrsDrift(harnessDir);
   const config = loadConfig(harnessDir);
   const maxLearnings = Math.min(config.maxLearningsPerFile, INJECT_MAX_LEARNINGS);
   const focus = readFocus(harnessDir);
@@ -243,6 +272,7 @@ export function formatInjectPayload(harnessDir: string): ContextInjectPayload {
     openDecisions,
     orchestration,
     srsDrift,
+    autoIngest,
     suggestedKnowledge,
   );
 
@@ -259,15 +289,16 @@ export function formatInjectPayload(harnessDir: string): ContextInjectPayload {
     openDecisions,
     orchestration,
     srsDrift,
+    autoIngest,
     suggestedKnowledge,
     text,
   };
 }
 
 /** CLI + hook entry: `context --inject [--json]`. */
-export function runContextInject(options: ContextInjectOptions = {}): void {
+export async function runContextInject(options: ContextInjectOptions = {}): Promise<void> {
   const harnessDir = options.harnessDir ?? requireHarness();
-  const payload = formatInjectPayload(harnessDir);
+  const payload = await formatInjectPayload(harnessDir);
 
   const human = payload.text || "No harness context to inject.";
   out(human, {
@@ -277,6 +308,7 @@ export function runContextInject(options: ContextInjectOptions = {}): void {
     openDecisions: payload.openDecisions,
     orchestration: payload.orchestration,
     srsDrift: payload.srsDrift,
+    autoIngest: payload.autoIngest,
     suggestedKnowledge: payload.suggestedKnowledge,
     text: payload.text,
   });

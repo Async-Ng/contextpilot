@@ -64,7 +64,7 @@ function seedSrs(cwd) {
   runJson(cwd, ["srs", "ingest", "--path", "docs/srs", "--reingest"]);
 }
 
-test("codex AGENTS.md uses compact knowledge and global summary, not full NFR body", () => {
+test("codex AGENTS.md uses index-only global knowledge and stub protocol by default", () => {
   withTempProject((cwd) => {
     runJson(cwd, ["setup", "--no-git", "--agent", "codex"]);
     seedSrs(cwd);
@@ -73,12 +73,14 @@ test("codex AGENTS.md uses compact knowledge and global summary, not full NFR bo
 
     assert.match(agentsMd, /# Project Knowledge/);
     assert.match(agentsMd, /knowledge show/);
-    assert.match(agentsMd, /Global SRS Summary/);
+    assert.match(agentsMd, /knowledge-index\.md/);
+    assert.match(agentsMd, /lightweight default/);
+    assert.doesNotMatch(agentsMd, /Global SRS Summary/);
     assert.doesNotMatch(agentsMd, /NFR-001: The system shall limit requests\.\nNFR-001/);
   });
 });
 
-test("cursor _project.mdc is summary-only while scoped srs module stays full", () => {
+test("cursor _project.mdc is index-only while scoped srs module stays full", () => {
   withTempProject((cwd) => {
     runJson(cwd, ["setup", "--no-git", "--agent", "cursor"]);
     seedSrs(cwd);
@@ -92,7 +94,8 @@ test("cursor _project.mdc is summary-only while scoped srs module stays full", (
       "utf8",
     );
 
-    assert.match(projectMdc, /Global SRS Summary/);
+    assert.match(projectMdc, /knowledge-index\.md/);
+    assert.doesNotMatch(projectMdc, /Global SRS Summary/);
     assert.doesNotMatch(projectMdc, /NFR-001: The system shall limit requests\.\nNFR-001/);
     assert.match(authMdc, /SCOPED_AUTH_MARKER/);
     assert.ok(
@@ -101,16 +104,35 @@ test("cursor _project.mdc is summary-only while scoped srs module stays full", (
   });
 });
 
-test("claude CLAUDE.md follows same compact policy as codex", () => {
+test("claude CLAUDE.md follows same index-only policy as codex", () => {
   withTempProject((cwd) => {
     runJson(cwd, ["setup", "--no-git", "--agent", "claude"]);
     seedSrs(cwd);
 
     const claudeMd = fs.readFileSync(path.join(cwd, "CLAUDE.md"), "utf8");
 
-    assert.match(claudeMd, /Global SRS Summary/);
+    assert.match(claudeMd, /knowledge-index\.md/);
     assert.match(claudeMd, /knowledge show/);
+    assert.doesNotMatch(claudeMd, /Global SRS Summary/);
     assert.doesNotMatch(claudeMd, /NFR-001: The system shall limit requests\.\nNFR-001/);
+  });
+});
+
+test("summary globalKnowledgePolicy remains available for strict/team style configs", () => {
+  withTempProject((cwd) => {
+    runJson(cwd, ["setup", "--no-git", "--agent", "codex"]);
+    const config = readConfig(cwd);
+    config.profile = "strict";
+    config.agentContext.globalKnowledgePolicy = "summary";
+    config.agentContext.protocolLevel = "standard";
+    writeConfig(cwd, config);
+    seedSrs(cwd);
+
+    const agentsMd = fs.readFileSync(path.join(cwd, "AGENTS.md"), "utf8");
+
+    assert.match(agentsMd, /Global SRS Summary/);
+    assert.match(agentsMd, /invisible to the user/);
+    assert.doesNotMatch(agentsMd, /NFR-001: The system shall limit requests\.\nNFR-001/);
   });
 });
 

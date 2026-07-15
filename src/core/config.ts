@@ -24,23 +24,29 @@ const srsConfigSchema = z.object({
   bootstrapPath: z.string().default("docs/srs"),
   bootstrapMode: z.enum(["nudge", "strict"]).default("nudge"),
   moduleMap: z.record(z.array(z.string())).default({}),
+  autoIngestOnDrift: z.boolean().default(true),
 });
 
 export const knowledgeModeSchema = z.enum(["manifest", "inline"]);
 export const globalKnowledgePolicySchema = z.enum(["summary", "full", "index-only"]);
 export const listKnowledgeInMainFileSchema = z.enum(["compact", "full", "none"]);
+export const profileSchema = z.enum(["light", "strict"]);
+export const protocolLevelSchema = z.enum(["stub", "standard"]);
+export const infrastructureFailureSchema = z.enum(["warn-open", "fail-closed"]);
+export const orchestrationAutoStartSchema = z.enum(["never", "non-trivial", "always"]);
 
 export const agentContextConfigSchema = z.object({
   knowledgeMode: knowledgeModeSchema,
   knowledgeIndexFile: z.string(),
   knowledgeExcerptChars: z.number().int().positive(),
   maxMainFileChars: z.number().int().positive(),
-  globalKnowledgePolicy: globalKnowledgePolicySchema.default("summary"),
+  globalKnowledgePolicy: globalKnowledgePolicySchema.default("index-only"),
   globalSummaryMaxChars: z.number().int().positive().default(4000),
   relevantDefaultSections: z.array(z.string()).default(["07", "03"]),
   relevantDefaultLimit: z.number().int().positive().default(2),
   relevantGroupByModule: z.boolean().default(true),
   listKnowledgeInMainFile: listKnowledgeInMainFileSchema.default("compact"),
+  protocolLevel: protocolLevelSchema.default("stub"),
 });
 
 export const gateModeSchema = z.enum(["sensitive-only", "strict"]);
@@ -66,9 +72,15 @@ export const orchestrationConfigSchema = z.object({
   requireReviewBeforeComplete: z.boolean(),
   runsFile: z.string(),
   eventsFile: z.string(),
+  autoStart: orchestrationAutoStartSchema.default("non-trivial"),
+});
+
+export const hooksConfigSchema = z.object({
+  infrastructureFailure: infrastructureFailureSchema.default("warn-open"),
 });
 
 export const harnessConfigSchema = z.object({
+  profile: profileSchema.default("light"),
   agents: z.array(agentSchema).min(1),
   targets: z.object({
     claude: targetConfigSchema,
@@ -91,12 +103,15 @@ export const harnessConfigSchema = z.object({
   agentContext: agentContextConfigSchema,
   gate: gateConfigSchema,
   orchestration: orchestrationConfigSchema,
+  hooks: hooksConfigSchema.default({ infrastructureFailure: "warn-open" }),
 });
 
 export type HarnessConfig = z.infer<typeof harnessConfigSchema>;
 export type SrsConfig = z.infer<typeof srsConfigSchema>;
 export type AgentName = z.infer<typeof agentSchema>;
 export type AgentContextConfig = z.infer<typeof agentContextConfigSchema>;
+export type Profile = z.infer<typeof profileSchema>;
+export type HooksConfig = z.infer<typeof hooksConfigSchema>;
 export type KnowledgeMode = z.infer<typeof knowledgeModeSchema>;
 export type GateConfig = z.infer<typeof gateConfigSchema>;
 export type GateMode = z.infer<typeof gateModeSchema>;
@@ -112,7 +127,7 @@ export function defaultGateConfig(): GateConfig {
     toolsMatcher: "Write|Edit|MultiEdit|NotebookEdit|Bash",
     decisionsFile: ".contextpilot/decisions/decisions.jsonl",
     confirmMode: "chat",
-    failClosed: true,
+    failClosed: false,
   };
 }
 
@@ -125,6 +140,13 @@ export function defaultOrchestrationConfig(): OrchestrationConfig {
     requireReviewBeforeComplete: true,
     runsFile: ".contextpilot/orchestration/runs.jsonl",
     eventsFile: ".contextpilot/orchestration/events.jsonl",
+    autoStart: "non-trivial",
+  };
+}
+
+export function defaultHooksConfig(): HooksConfig {
+  return {
+    infrastructureFailure: "warn-open",
   };
 }
 
@@ -134,17 +156,19 @@ export function defaultAgentContextConfig(): AgentContextConfig {
     knowledgeIndexFile: ".contextpilot/context/knowledge-index.md",
     knowledgeExcerptChars: 240,
     maxMainFileChars: 120000,
-    globalKnowledgePolicy: "summary",
+    globalKnowledgePolicy: "index-only",
     globalSummaryMaxChars: 4000,
     relevantDefaultSections: ["07", "03"],
     relevantDefaultLimit: 2,
     relevantGroupByModule: true,
     listKnowledgeInMainFile: "compact",
+    protocolLevel: "stub",
   };
 }
 
 export function defaultConfig(agents: AgentName[] = ["claude", "cursor", "codex"]): HarnessConfig {
   return {
+    profile: "light",
     agents,
     targets: {
       claude: { output: "CLAUDE.md" },
@@ -177,9 +201,11 @@ export function defaultConfig(agents: AgentName[] = ["claude", "cursor", "codex"
       bootstrapPath: "docs/srs",
       bootstrapMode: "nudge",
       moduleMap: {},
+      autoIngestOnDrift: true,
     },
     agentContext: defaultAgentContextConfig(),
     gate: defaultGateConfig(),
     orchestration: defaultOrchestrationConfig(),
+    hooks: defaultHooksConfig(),
   };
 }

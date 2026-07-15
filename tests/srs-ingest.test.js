@@ -362,7 +362,7 @@ test("sync warns when a generated main agent file exceeds the configured size bu
   });
 });
 
-test("status reports no SRS drift right after ingest, then flags stale and new files", () => {
+test("status auto-ingests safe SRS drift by default", () => {
   withTempProject((cwd) => {
     runJson(cwd, ["setup", "--no-git"]);
     writeFile(
@@ -387,19 +387,15 @@ test("status reports no SRS drift right after ingest, then flags stale and new f
     );
 
     const dirty = runJson(cwd, ["status"]);
-    const byPath = Object.fromEntries(dirty.json.srsDrift.map((d) => [d.path, d.kind]));
+    assert.equal(dirty.json.autoIngest.status, "ingested");
+    const byPath = Object.fromEntries(dirty.json.autoIngest.drift.map((d) => [d.path, d.kind]));
     assert.equal(byPath["docs/srs/03-functional-requirements/module-auth.md"], "stale");
     assert.equal(byPath["docs/srs/03-functional-requirements/module-billing.md"], "new");
-
-    const reingest = runJson(cwd, ["srs", "ingest", "--path", "docs/srs", "--reingest"]);
-    assert.equal(reingest.code, 0);
-
-    const afterReingest = runJson(cwd, ["status"]);
-    assert.deepEqual(afterReingest.json.srsDrift, []);
+    assert.deepEqual(dirty.json.srsDrift, []);
   });
 });
 
-test("context --inject surfaces SRS drift so agents don't need to remember reingest", () => {
+test("context --inject auto-ingests safe SRS drift before returning context", () => {
   withTempProject((cwd) => {
     runJson(cwd, ["setup", "--no-git"]);
     writeFile(
@@ -417,10 +413,42 @@ test("context --inject surfaces SRS drift so agents don't need to remember reing
     const result = runJson(cwd, ["context", "--inject"]);
 
     assert.equal(result.code, 0);
+    assert.match(result.json.text, /SRS Auto-Ingest/);
+    assert.equal(result.json.autoIngest.status, "ingested");
+    assert.equal(result.json.autoIngest.drift.length, 1);
+    assert.equal(result.json.autoIngest.drift[0].kind, "stale");
+    assert.deepEqual(result.json.srsDrift, []);
+  });
+});
+
+test("context --inject reports SRS drift when rule drift would make auto-ingest unsafe", () => {
+  withTempProject((cwd) => {
+    runJson(cwd, ["setup", "--no-git"]);
+    writeFile(
+      cwd,
+      "docs/srs/03-functional-requirements/module-auth.md",
+      "# Section 3: Functional Requirements - Module: Auth\n\nOriginal auth body\n",
+    );
+    runJson(cwd, ["srs", "ingest", "--path", "docs/srs"]);
+    writeFile(
+      cwd,
+      ".contextpilot/rules/srs-03-auth.md",
+      fs.readFileSync(path.join(cwd, ".contextpilot", "rules", "srs-03-auth.md"), "utf8") +
+        "\nManual rule edit\n",
+    );
+    writeFile(
+      cwd,
+      "docs/srs/03-functional-requirements/module-auth.md",
+      "# Section 3: Functional Requirements - Module: Auth\n\nEdited auth body\n",
+    );
+
+    const result = runJson(cwd, ["context", "--inject"]);
+
+    assert.equal(result.code, 0);
+    assert.equal(result.json.autoIngest.status, "skipped");
+    assert.equal(result.json.autoIngest.reason, "rule_drift_conflict");
     assert.match(result.json.text, /SRS Source Drift/);
-    assert.match(result.json.text, /stale.*module-auth\.md/);
     assert.equal(result.json.srsDrift.length, 1);
-    assert.equal(result.json.srsDrift[0].kind, "stale");
   });
 });
 

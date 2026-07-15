@@ -24,6 +24,17 @@ agents:
   knowledge rules) falls out of sync with what the agent last saw, `status`/`context --inject`
   surface it instead of silently serving stale information.
 
+## When ContextPilot is worth it
+
+ContextPilot is most useful when a repo has durable business rules, SRS docs, several agents, or
+a team that benefits from shared memory, drift checks, and gates. It can be too much ceremony for
+one-off scripts, tiny solo repos, or purely mechanical edits.
+
+The default profile is now **light** for 1-2 developer projects: small technical tasks use a fast
+path, generated agent files are index-first, and hook infrastructure failures warn without blocking.
+Set `"profile": "strict"` in `.contextpilot/harness.config.json` when a team wants the older,
+more prescriptive behavior.
+
 ## Supported agents
 
 | Agent | Hook coverage |
@@ -180,9 +191,12 @@ contextpilot sync --preview
 ```
 
 - `status --fast` skips expensive scans and returns a minimal, reliable summary.
-- `sync --preview` shows what would change without rewriting files.
-- `orchestrate start` is still the structured workflow command for non-trivial tasks; it is
-  separate from the new top-level `start` readiness command.
+- `sync --preview` shows what would change without rewriting files and reports generated-size
+  deltas.
+- Small tasks such as CI fixes, dead-code deletion, renames, and docs typos should not start
+  orchestration by default.
+- `orchestrate start` remains the structured workflow command for non-trivial tasks: multi-file
+  feature work, business logic, migrations, risky refactors, or explicit workflow requests.
 
 ## CLI reference
 
@@ -216,14 +230,23 @@ output.
 
 Project settings live in `.contextpilot/harness.config.json`. The most commonly touched options:
 
+- `profile`: `"light"` (default) or `"strict"`. Light optimizes for solo/small-team overhead;
+  strict restores more prescriptive automation defaults.
 - `gate.mode`: `"sensitive-only"` (default, only SRS-linked scopes) or `"strict"` (all
   `gate.businessScopes` globs).
+- `hooks.infrastructureFailure`: `"warn-open"` (default in light) or `"fail-closed"` (default in
+  strict). Policy denials still block; this only controls missing CLI/config infrastructure.
+- `orchestration.autoStart`: `"non-trivial"` (default), `"never"`, or `"always"`.
 - `srs.bootstrapMode`: `"nudge"` (default, coding isn't blocked) or `"strict"` (business-scope
   edits denied while SRS status is `missing`; `docs/srs/**` edits stay allowed).
+- `srs.autoIngestOnDrift`: `true` by default; `status`, `context --inject`, and `sync` will
+  re-ingest changed SRS sources when no rule-file drift would be overwritten.
 - `agentContext.knowledgeMode`: `"manifest"` (default for single-file agents — points at
   `.contextpilot/context/knowledge-index.md` instead of inlining SRS bodies) or `"inline"`.
-- `agentContext.globalKnowledgePolicy`: `"summary"` (default — compact SRS tables in agent files;
-  full text via `knowledge show`) or `"full"` / `"index-only"`.
+- `agentContext.globalKnowledgePolicy`: `"index-only"` (default in light), `"summary"` (default in
+  strict), or `"full"`.
+- `agentContext.protocolLevel`: `"stub"` (default in light) or `"standard"` (strict-style full
+  protocol).
 - `agentContext.listKnowledgeInMainFile`: `"compact"` (default — no 50-line knowledge list),
   `"full"` (legacy list), or `"none"`.
 - `agentContext.relevantDefaultSections`: default `["07", "03"]` for `knowledge relevant`.
@@ -232,14 +255,18 @@ Project settings live in `.contextpilot/harness.config.json`. The most commonly 
 
 ### Knowledge workflow (v0.4+)
 
-Agent instruction files now contain **SRS summaries only**. Load full requirements on demand:
+Agent instruction files are **index-first by default**. Load full requirements on demand:
 
 ```bash
 contextpilot knowledge relevant --file api/inventory/service.ts --task code --limit 2 --json
 contextpilot knowledge show srs-07-inventory
 ```
 
-`knowledge show` resolves the full body from the canonical SRS source when ingest hashes match; if the SRS file changed without re-ingest, JSON output includes `driftWarning` and the ingested rule body is used instead.
+`knowledge show` resolves the full body from the canonical SRS source when ingest hashes match; if
+the SRS file changed without re-ingest, JSON output includes `driftWarning` and the ingested rule
+body is used instead. `status`, `context --inject`, and `sync` auto-ingest safe SRS drift by
+default; if rule-file drift makes that unsafe, they report the conflict and the manual ingest
+command.
 
 Cursor scoped `.mdc` rules still carry full module SRS bodies when you edit matching paths.
 
@@ -261,6 +288,14 @@ To restore the old behavior (full SRS inline in agent files), set in
     "globalKnowledgePolicy": "full",
     "listKnowledgeInMainFile": "full"
   }
+}
+```
+
+To restore the more prescriptive team workflow, set:
+
+```json
+{
+  "profile": "strict"
 }
 ```
 

@@ -8,6 +8,7 @@ import {
   hasStatusIssues,
   type StatusReport,
 } from "../core/status-logic";
+import { autoIngestSrsDrift } from "../core/srs-auto";
 
 export interface StatusCommandOptions {
   fast?: boolean;
@@ -30,8 +31,9 @@ function formatDiagnostics(report: StatusReport): string[] {
   return lines;
 }
 
-export function runStatus(options: StatusCommandOptions = {}): void {
+export async function runStatus(options: StatusCommandOptions = {}): Promise<void> {
   const harnessDir = requireHarness();
+  const autoIngest = await autoIngestSrsDrift(harnessDir);
   const report = computeStatus(harnessDir, { fast: options.fast });
   const projectRoot = path.dirname(harnessDir);
   const hasIssues = hasStatusIssues(report);
@@ -87,6 +89,11 @@ export function runStatus(options: StatusCommandOptions = {}): void {
     }
     lines.push(`  -> run: contextpilot srs ingest --path ${report.srs.path} --reingest --json`);
   }
+  if (autoIngest.status === "ingested") {
+    lines.push(chalk.green(`SRS auto-ingested ${autoIngest.drift.length} changed file(s).`));
+  } else if (autoIngest.status === "skipped" || autoIngest.status === "failed") {
+    lines.push(chalk.yellow(`SRS auto-ingest ${autoIngest.status}: ${autoIngest.reason ?? "unknown"}`));
+  }
   if (report.ruleDrift.length > 0) {
     lines.push(chalk.yellow(`Rule file drift (${report.ruleDrift.length}):`));
     for (const d of report.ruleDrift) {
@@ -135,6 +142,7 @@ export function runStatus(options: StatusCommandOptions = {}): void {
 
   out(lines.join("\n"), {
     ...report,
+    autoIngest,
     suggestedCommand: getStatusActionHint(report, projectRoot),
     confidenceSummary: getStatusConfidenceSummary(report),
   });

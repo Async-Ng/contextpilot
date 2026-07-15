@@ -52,10 +52,18 @@ test("setup on a fresh project creates harness storage and generated protocol", 
     assert.ok(fs.existsSync(path.join(cwd, ".contextpilot", "orchestration", "runs.jsonl")));
     assert.ok(fs.existsSync(path.join(cwd, ".contextpilot", "orchestration", "events.jsonl")));
     assert.equal(readState(cwd).srs.status, "missing");
+    const config = JSON.parse(
+      fs.readFileSync(path.join(cwd, ".contextpilot", "harness.config.json"), "utf8"),
+    );
+    assert.equal(config.profile, "light");
+    assert.equal(config.agentContext.protocolLevel, "stub");
+    assert.equal(config.agentContext.globalKnowledgePolicy, "index-only");
+    assert.equal(config.hooks.infrastructureFailure, "warn-open");
 
     const agentsMd = fs.readFileSync(path.join(cwd, "AGENTS.md"), "utf8");
-    assert.match(agentsMd, /invisible to the user/);
-    assert.match(agentsMd, /User Interaction Rule/);
+    assert.match(agentsMd, /lightweight default/);
+    assert.match(agentsMd, /small technical tasks/);
+    assert.doesNotMatch(agentsMd, /User Interaction Rule/);
     assert.match(agentsMd, /SRS Bootstrap Required/);
   });
 });

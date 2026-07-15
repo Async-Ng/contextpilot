@@ -11,9 +11,13 @@ import {
   EXIT_OK,
   errOut,
   exitMissingFlag,
+  getHarnessDir,
   requireHarness,
 } from "../core/io";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { listOpenDecisions } from "../core/decisions";
+import { getGlobalOptions } from "../core/globals";
 import { runClaudeAdapter } from "../adapters/claude";
 import { runCodexAdapter } from "../adapters/codex";
 import { runCopilotAdapter } from "../adapters/copilot";
@@ -47,6 +51,29 @@ function runAdapter(agent: GateAgentName, harnessDir: string): void {
   }
 }
 
+function harnessConfigExists(harnessDir: string): boolean {
+  return fs.existsSync(path.join(harnessDir, "harness.config.json"));
+}
+
+function allowInfrastructureFailure(agent: string | undefined, message: string): never {
+  const payload = {
+    status: "allowed",
+    warning: "infrastructure_failure",
+    message,
+    blocked: false,
+  };
+  if (agent === "cursor") {
+    process.stdout.write(
+      `${JSON.stringify({ permission: "allow", agentMessage: message })}\n`,
+    );
+  } else if (getGlobalOptions().json) {
+    process.stderr.write(`${JSON.stringify(payload, null, 2)}\n`);
+  } else {
+    process.stderr.write(`${message}\n`);
+  }
+  process.exit(EXIT_OK);
+}
+
 export interface GateCheckOptions {
   agent?: string;
 }
@@ -60,7 +87,7 @@ export interface GateInstallCommandOptions {
  * `gate check --agent <name>` - read stdin, delegate to the agent adapter.
  */
 export function runGateCheck(opts: GateCheckOptions): void {
-  const harnessDir = requireHarness();
+  const harnessDir = getHarnessDir();
 
   if (!opts.agent) {
     exitMissingFlag(
@@ -77,6 +104,13 @@ export function runGateCheck(opts: GateCheckOptions): void {
     process.exit(EXIT_GENERAL);
   }
 
+  if (!harnessConfigExists(harnessDir)) {
+    allowInfrastructureFailure(
+      opts.agent,
+      "contextpilot gate: project is not initialized; allowing hook in light fail-open mode. Run `contextpilot setup` to enable enforcement.",
+    );
+  }
+
   runAdapter(opts.agent, harnessDir);
 }
 
@@ -84,7 +118,13 @@ export function runGateCheck(opts: GateCheckOptions): void {
  * `gate precommit` - evaluate staged files; block on open discussion or gated scopes.
  */
 export function runGatePrecommit(): void {
-  const harnessDir = requireHarness();
+  const harnessDir = getHarnessDir();
+  if (!harnessConfigExists(harnessDir)) {
+    allowInfrastructureFailure(
+      undefined,
+      "contextpilot gate: project is not initialized; allowing commit in light fail-open mode. Run `contextpilot setup` to enable enforcement.",
+    );
+  }
 
   const open = listOpenDecisions(harnessDir);
   if (open.length > 0) {
