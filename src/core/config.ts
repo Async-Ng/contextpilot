@@ -34,6 +34,7 @@ export const profileSchema = z.enum(["light", "strict"]);
 export const protocolLevelSchema = z.enum(["stub", "standard"]);
 export const infrastructureFailureSchema = z.enum(["warn-open", "fail-closed"]);
 export const orchestrationAutoStartSchema = z.enum(["never", "non-trivial", "always"]);
+export const runtimeModeSchema = z.enum(["legacy", "project", "external"]);
 
 export const agentContextConfigSchema = z.object({
   knowledgeMode: knowledgeModeSchema,
@@ -68,11 +69,31 @@ export const orchestrationConfigSchema = z.object({
   enabled: z.boolean(),
   mode: orchestrationModeSchema,
   defaultWorkflow: z.enum(["coding"]),
+  defaultPreset: z.enum(["coding", "lightweight"]).default("coding"),
   stepAwareGate: z.boolean(),
   requireReviewBeforeComplete: z.boolean(),
   runsFile: z.string(),
   eventsFile: z.string(),
   autoStart: orchestrationAutoStartSchema.default("non-trivial"),
+});
+
+export const runtimeConfigSchema = z.object({
+  mode: runtimeModeSchema.default("legacy"),
+  dir: z.string().optional(),
+  maxLogBytes: z.number().int().positive().default(16384),
+});
+
+export const contextConfigSchema = z.object({
+  focusTtlHours: z.number().positive().default(24),
+  maxTokens: z.number().int().positive().default(6000),
+});
+
+export const observabilityConfigSchema = z.object({
+  mode: z.enum(["off", "local", "export"]).default("local"),
+});
+
+export const evalConfigSchema = z.object({
+  enabled: z.boolean().default(true),
 });
 
 export const hooksConfigSchema = z.object({
@@ -101,6 +122,10 @@ export const harnessConfigSchema = z.object({
   discover: discoverConfigSchema,
   srs: srsConfigSchema,
   agentContext: agentContextConfigSchema,
+  runtime: runtimeConfigSchema.default({ mode: "legacy" }),
+  context: contextConfigSchema.default({ focusTtlHours: 24, maxTokens: 6000 }),
+  observability: observabilityConfigSchema.default({ mode: "local" }),
+  eval: evalConfigSchema.default({ enabled: true }),
   gate: gateConfigSchema,
   orchestration: orchestrationConfigSchema,
   hooks: hooksConfigSchema.default({ infrastructureFailure: "warn-open" }),
@@ -112,6 +137,10 @@ export type AgentName = z.infer<typeof agentSchema>;
 export type AgentContextConfig = z.infer<typeof agentContextConfigSchema>;
 export type Profile = z.infer<typeof profileSchema>;
 export type HooksConfig = z.infer<typeof hooksConfigSchema>;
+export type RuntimeConfig = z.infer<typeof runtimeConfigSchema>;
+export type ContextConfig = z.infer<typeof contextConfigSchema>;
+export type ObservabilityConfig = z.infer<typeof observabilityConfigSchema>;
+export type EvalConfig = z.infer<typeof evalConfigSchema>;
 export type KnowledgeMode = z.infer<typeof knowledgeModeSchema>;
 export type GateConfig = z.infer<typeof gateConfigSchema>;
 export type GateMode = z.infer<typeof gateModeSchema>;
@@ -136,12 +165,35 @@ export function defaultOrchestrationConfig(): OrchestrationConfig {
     enabled: true,
     mode: "prescriptive",
     defaultWorkflow: "coding",
+    defaultPreset: "coding",
     stepAwareGate: true,
     requireReviewBeforeComplete: true,
     runsFile: ".contextpilot/orchestration/runs.jsonl",
     eventsFile: ".contextpilot/orchestration/events.jsonl",
     autoStart: "non-trivial",
   };
+}
+
+export function defaultRuntimeConfig(): RuntimeConfig {
+  return {
+    mode: "legacy",
+    maxLogBytes: 16384,
+  };
+}
+
+export function defaultContextConfig(): ContextConfig {
+  return {
+    focusTtlHours: 24,
+    maxTokens: 6000,
+  };
+}
+
+export function defaultObservabilityConfig(): ObservabilityConfig {
+  return { mode: "local" };
+}
+
+export function defaultEvalConfig(): EvalConfig {
+  return { enabled: true };
 }
 
 export function defaultHooksConfig(): HooksConfig {
@@ -204,6 +256,10 @@ export function defaultConfig(agents: AgentName[] = ["claude", "cursor", "codex"
       autoIngestOnDrift: true,
     },
     agentContext: defaultAgentContextConfig(),
+    runtime: defaultRuntimeConfig(),
+    context: defaultContextConfig(),
+    observability: defaultObservabilityConfig(),
+    eval: defaultEvalConfig(),
     gate: defaultGateConfig(),
     orchestration: defaultOrchestrationConfig(),
     hooks: defaultHooksConfig(),

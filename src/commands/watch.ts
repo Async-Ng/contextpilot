@@ -12,7 +12,7 @@ import { evaluate, matchesGlob } from "../core/gate";
 import { getGlobalOptions } from "../core/globals";
 import { appendLine, EXIT_OK, out, requireHarness, sha256File } from "../core/io";
 import { readActiveLearnings } from "../core/memory";
-import { loadState } from "../core/state";
+import { loadState, toStatePathKey } from "../core/state";
 import { runSync } from "../core/sync";
 
 const DEBOUNCE_MS = 300;
@@ -142,7 +142,7 @@ export async function runWatch(): Promise<void> {
   function shouldIgnoreGenerated(filePath: string): boolean {
     const state = loadState(harnessDir);
     const normalized = path.normalize(filePath);
-    const entry = state.generated[normalized];
+    const entry = state.generated[toStatePathKey(harnessDir, normalized)];
     if (!entry) return false;
     const hash = sha256File(normalized);
     return hash === entry.hash;

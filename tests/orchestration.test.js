@@ -105,6 +105,29 @@ test("advance completes current step and activates the next step", () => {
   });
 });
 
+test("orchestrate start supports lightweight preset", () => {
+  withProject((cwd) => {
+    const result = runJson(cwd, [
+      "orchestrate",
+      "start",
+      "--goal",
+      "Fix button spacing",
+      "--scope",
+      "src/**",
+      "--preset",
+      "lightweight",
+    ]);
+
+    assert.equal(result.code, 0);
+    assert.equal(result.json.run.preset, "lightweight");
+    assert.equal(result.json.run.activeStepId, "implement");
+    assert.deepEqual(
+      result.json.run.steps.map((s) => s.id),
+      ["implement", "verify", "checkpoint"],
+    );
+  });
+});
+
 test("context inject includes active orchestration details", () => {
   withProject((cwd) => {
     runJson(cwd, [
@@ -194,6 +217,81 @@ test("gate denies file edits during non-edit orchestration step", () => {
   });
 });
 
+test("gate denial suggests reopen during review", () => {
+  withProject((cwd) => {
+    runJson(cwd, ["orchestrate", "start", "--goal", "Add refunds", "--scope", "src/**"]);
+    runJson(cwd, ["orchestrate", "advance", "--status", "complete", "--note", "plan"]);
+    runJson(cwd, ["orchestrate", "advance", "--status", "complete", "--note", "impl"]);
+
+    const result = spawnSync("node", [CLI, "gate", "check", "--agent", "claude"], {
+      cwd,
+      input: JSON.stringify({ tool_input: { file_path: "src/app.ts" } }),
+      encoding: "utf8",
+    });
+
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /orchestrate reopen --step implement/);
+  });
+});
+
+test("orchestrate reopen returns to implement with audit trail", () => {
+  withProject((cwd) => {
+    runJson(cwd, ["orchestrate", "start", "--goal", "Add refunds", "--scope", "src/**"]);
+    runJson(cwd, ["orchestrate", "advance", "--status", "complete", "--note", "plan"]);
+    runJson(cwd, ["orchestrate", "advance", "--status", "complete", "--note", "impl"]);
+
+    const result = runJson(cwd, [
+      "orchestrate",
+      "reopen",
+      "--step",
+      "implement",
+      "--reason",
+      "Review found missing edge case",
+    ]);
+
+    assert.equal(result.code, 0);
+    assert.equal(result.json.status, "reopened");
+    assert.equal(result.json.run.activeStepId, "implement");
+    assert.equal(result.json.run.steps.find((s) => s.id === "review").status, "pending");
+
+    const events = fs
+      .readFileSync(path.join(cwd, ".contextpilot", "orchestration", "events.jsonl"), "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+    assert.equal(events.at(-1).type, "step_reopened");
+  });
+});
+
+test("orchestrate scope add expands scope and out-of-scope denial suggests command", () => {
+  withProject((cwd) => {
+    runJson(cwd, ["orchestrate", "start", "--goal", "Update CI", "--scope", "src/**"]);
+    runJson(cwd, ["orchestrate", "advance", "--status", "complete", "--note", "plan"]);
+
+    const denied = spawnSync("node", [CLI, "gate", "check", "--agent", "claude"], {
+      cwd,
+      input: JSON.stringify({ tool_input: { file_path: ".github/workflows/test.yml" } }),
+      encoding: "utf8",
+    });
+    assert.equal(denied.status, 2);
+    assert.match(denied.stderr, /orchestrate scope add/);
+
+    const result = runJson(cwd, [
+      "orchestrate",
+      "scope",
+      "add",
+      "--scope",
+      ".github/**",
+      "--reason",
+      "CI config needed",
+    ]);
+
+    assert.equal(result.code, 0);
+    assert.deepEqual(result.json.addedScope, [".github/**"]);
+    assert.deepEqual(result.json.nextScope, ["src/**", ".github/**"]);
+  });
+});
+
 function readRuns(cwd) {
   const runsFile = path.join(cwd, ".contextpilot", "orchestration", "runs.jsonl");
   return fs
@@ -246,6 +344,122 @@ test("checkpoint warns instead of advancing when the run isn't at its checkpoint
     const lastRun = runs.at(-1);
     assert.equal(lastRun.status, "active");
     assert.equal(lastRun.activeStepId, "plan");
+  });
+});
+
+test("checkpoint no-persist does not append orchestration events", () => {
+  withProject((cwd) => {
+    runJson(cwd, ["orchestrate", "start", "--goal", "Add refunds", "--scope", "src/**"]);
+    const eventsPath = path.join(cwd, ".contextpilot", "orchestration", "events.jsonl");
+    const before = fs.readFileSync(eventsPath, "utf8");
+
+    const result = runJson(cwd, ["checkpoint", "--no-persist"]);
+
+    assert.equal(result.code, 0);
+    assert.equal(result.json.noPersist, true);
+    assert.equal(fs.readFileSync(eventsPath, "utf8"), before);
+  });
+});
+
+test("runtime project mode stores orchestration outside tracked state files", () => {
+  withProject((cwd) => {
+    const config = readConfig(cwd);
+    config.runtime = { mode: "project" };
+    writeConfig(cwd, config);
+
+    const result = runJson(cwd, ["orchestrate", "start", "--goal", "Runtime run", "--scope", "src/**"]);
+
+    assert.equal(result.code, 0);
+    assert.ok(fs.existsSync(path.join(cwd, ".contextpilot", "runtime", "state.json")));
+    assert.ok(fs.existsSync(path.join(cwd, ".contextpilot", "runtime", "orchestration", "runs.jsonl")));
+    const state = JSON.parse(fs.readFileSync(path.join(cwd, ".contextpilot", "state.json"), "utf8"));
+    assert.equal(state.orchestration.activeRunId, undefined);
+  });
+});
+
+test("contract verification records bounded evidence and transitions to review", () => {
+  withProject((cwd) => {
+    const contract = path.join(cwd, "contract.json");
+    fs.writeFileSync(contract, JSON.stringify({
+      acceptanceCriteria: ["Tests pass"],
+      verificationCommands: ["node --version"],
+      riskLevel: "medium",
+      packs: ["test-repair"],
+    }), "utf8");
+    const started = runJson(cwd, ["orchestrate", "start", "--goal", "Verify", "--scope", "src/**", "--contract", "contract.json"]);
+    assert.equal(started.json.run.contract.riskLevel, "medium");
+    assert.ok(started.json.run.worktree.worktreePath);
+    runJson(cwd, ["orchestrate", "advance", "--status", "complete", "--note", "plan"]);
+    runJson(cwd, ["orchestrate", "advance", "--status", "complete", "--note", "implementation"]);
+    const result = runJson(cwd, ["orchestrate", "verify"]);
+    assert.equal(result.code, 0);
+    assert.equal(result.json.run.activeStepId, "review");
+    assert.equal(result.json.run.evidence.length, 1);
+    assert.equal(result.json.run.evidence[0].exitCode, 0);
+    assert.ok(result.json.run.evidence[0].outputPreview.length > 0);
+  });
+});
+
+test("revision conflict prevents stale orchestration mutation", () => {
+  withProject((cwd) => {
+    const started = runJson(cwd, ["orchestrate", "start", "--goal", "Revision", "--scope", "src/**"]);
+    const result = runJson(cwd, ["orchestrate", "advance", "--status", "complete", "--expected-revision", String(started.json.run.revision + 1)]);
+    assert.equal(result.code, 1);
+    assert.match(result.json.message, /revision conflict/);
+  });
+});
+
+test("failed review transitions back to implement for a fix loop", () => {
+  withProject((cwd) => {
+    runJson(cwd, ["orchestrate", "start", "--goal", "Review loop", "--scope", "src/**"]);
+    runJson(cwd, ["orchestrate", "advance", "--status", "complete", "--note", "plan"]);
+    runJson(cwd, ["orchestrate", "advance", "--status", "complete", "--note", "implement"]);
+    runJson(cwd, ["orchestrate", "advance", "--status", "complete", "--note", "verify"]);
+    const result = runJson(cwd, ["orchestrate", "advance", "--status", "failed", "--note", "review found a bug"]);
+    assert.equal(result.code, 0);
+    assert.equal(result.json.run.activeStepId, "implement");
+    assert.equal(result.json.run.status, "active");
+  });
+});
+
+test("context explain, run report, trace export, and eval expose local harness artifacts", () => {
+  withProject((cwd) => {
+    const started = runJson(cwd, ["orchestrate", "start", "--goal", "Artifacts", "--scope", "src/**"]);
+    const explain = runJson(cwd, ["context", "explain"]);
+    assert.equal(explain.code, 0);
+    assert.ok(explain.json.contextManifest.some((item) => item.source === "run-contract"));
+    const report = runJson(cwd, ["run", "report", "--run", started.json.run.id]);
+    assert.equal(report.code, 0);
+    assert.equal(report.json.runId, started.json.run.id);
+    const trace = runJson(cwd, ["trace", "export", "--format", "otlp-json", "--run", started.json.run.id]);
+    assert.equal(trace.code, 0);
+    assert.equal(trace.json.resourceSpans[0].resource.attributes["service.name"], "contextpilot");
+    const evaluation = runJson(cwd, ["eval", "run"]);
+    assert.equal(evaluation.code, 0);
+    assert.equal(evaluation.json.passed, true);
+  });
+});
+
+test("risky command requires a time-bound approval tied to the run", () => {
+  withProject((cwd) => {
+    runJson(cwd, ["orchestrate", "start", "--goal", "Risk", "--scope", "src/**"]);
+    const denied = spawnSync("node", [CLI, "gate", "check", "--agent", "cursor"], {
+      cwd,
+      input: JSON.stringify({ command: "curl https://example.test" }),
+      encoding: "utf8",
+    });
+    assert.equal(denied.status, 2);
+    const response = JSON.parse(denied.stdout);
+    const requestId = response.agentMessage.match(/--request (approval_[a-zA-Z0-9_-]+)/)[1];
+    const granted = runJson(cwd, ["approval", "grant", "--request", requestId, "--reason", "approved"]);
+    assert.equal(granted.code, 0);
+    const allowed = spawnSync("node", [CLI, "gate", "check", "--agent", "cursor"], {
+      cwd,
+      input: JSON.stringify({ command: "curl https://example.test" }),
+      encoding: "utf8",
+    });
+    assert.equal(allowed.status, 0);
+    assert.equal(JSON.parse(allowed.stdout).permission, "allow");
   });
 });
 

@@ -6,6 +6,7 @@ const EXIT_DENY = 2;
 
 interface ClaudeToolInput {
   file_path?: string;
+  command?: string;
 }
 
 interface ClaudeHookPayload {
@@ -28,7 +29,8 @@ function parsePayload(raw: string): ClaudeHookPayload {
   }
   const toolInput = toolInputRaw as Record<string, unknown>;
   const filePath = typeof toolInput.file_path === "string" ? toolInput.file_path : undefined;
-  return { tool_input: { file_path: filePath } };
+  const command = typeof toolInput.command === "string" ? toolInput.command : undefined;
+  return { tool_input: { file_path: filePath, command } };
 }
 
 /**
@@ -50,7 +52,12 @@ export function runClaudeAdapter(harnessDir: string): void {
   }
 
   const file = payload.tool_input?.file_path;
-  const result = evaluate(harnessDir, file ? { file } : {});
+  const command = payload.tool_input?.command;
+  const result = file
+    ? evaluate(harnessDir, { file })
+    : command
+      ? evaluate(harnessDir, { command })
+      : evaluate(harnessDir, {});
 
   if (result.decision === "deny") {
     process.stderr.write(`${result.reason}\n`);

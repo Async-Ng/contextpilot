@@ -125,6 +125,19 @@ function exitInitRequiresYes(): never {
 
 }
 
+function ensureGitignoreEntry(cwd: string, entry: string): void {
+  const gitignorePath = path.join(cwd, ".gitignore");
+  const existing = fs.existsSync(gitignorePath)
+    ? fs.readFileSync(gitignorePath, "utf8")
+    : "";
+  const lines = existing.split(/\r?\n/).map((line) => line.trim());
+  if (lines.includes(entry)) {
+    return;
+  }
+  const prefix = existing.length > 0 && !existing.endsWith("\n") ? "\n" : "";
+  writeAtomic(gitignorePath, `${existing}${prefix}${entry}\n`);
+}
+
 
 
 export function scaffoldHarness(
@@ -150,6 +163,16 @@ export function scaffoldHarness(
   fs.mkdirSync(path.join(harnessDir, "decisions"), { recursive: true });
 
   fs.mkdirSync(path.join(harnessDir, "orchestration"), { recursive: true });
+
+  fs.mkdirSync(path.join(harnessDir, "runtime"), { recursive: true });
+  for (const pack of ["frontend-ui", "test-repair", "ci-infra", "refactor", "release"]) {
+    const packDir = path.join(harnessDir, "packs", pack);
+    fs.mkdirSync(packDir, { recursive: true });
+    writeAtomic(
+      path.join(packDir, "SKILL.md"),
+      `# ${pack}\n\nLoad this pack only when the active run contract lists \`${pack}\`. Keep changes within the run scope and record verification evidence.\n`,
+    );
+  }
 
 
 
@@ -180,6 +203,8 @@ export function scaffoldHarness(
   writeAtomic(runsPath, "");
 
   writeAtomic(eventsPath, "");
+
+  ensureGitignoreEntry(cwd, ".contextpilot/runtime/");
 
 
 

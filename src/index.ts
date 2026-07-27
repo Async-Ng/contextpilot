@@ -2,7 +2,12 @@
 import { Command } from "commander";
 import { runAdd } from "./commands/add";
 import { runCheckpoint } from "./commands/checkpoint";
-import { runContextInject } from "./commands/context";
+import { runApprovalDecision } from "./commands/approval";
+import { runCommitStatus } from "./commands/commit-status";
+import { runContextExplain, runContextInject } from "./commands/context";
+import { runEval, runEvalCompare } from "./commands/eval";
+import { runRunReport } from "./commands/run";
+import { runTraceExport } from "./commands/trace";
 import {
   runDecisionList,
   runDecisionOpen,
@@ -30,8 +35,11 @@ import {
   runOrchestrateAdvance,
   runOrchestrateCancel,
   runOrchestrateEvent,
+  runOrchestrateReopen,
+  runOrchestrateScopeAdd,
   runOrchestrateStart,
   runOrchestrateStatus,
+  runOrchestrateVerify,
 } from "./commands/orchestrate";
 import { refreshHarness } from "./commands/refresh";
 import { runResolve } from "./commands/resolve";
@@ -135,6 +143,13 @@ program
   .option("--fast", "Return a lightweight, reliable status summary", false)
   .action(async (opts: { fast?: boolean }) => {
     await runStatus(opts);
+  });
+
+program
+  .command("commit-status")
+  .description("Classify git changes for commit safety")
+  .action(() => {
+    runCommitStatus();
   });
 
 program
@@ -316,7 +331,9 @@ orchestrate
   .option("--goal <text>", "Goal for this run")
   .option("--scope <glob>", "Affected file glob(s), comma-separated")
   .option("--workflow <name>", "Workflow name", "coding")
-  .action(async (opts: { goal?: string; scope?: string; workflow?: string }) => {
+  .option("--preset <name>", "Preset: coding or lightweight", "coding")
+  .option("--contract <file>", "JSON run contract file")
+  .action(async (opts: { goal?: string; scope?: string; workflow?: string; preset?: string; contract?: string }) => {
     await runOrchestrateStart(opts);
   });
 
@@ -332,8 +349,41 @@ orchestrate
   .description("Advance, block, or fail the active orchestration step")
   .option("--status <status>", "complete|blocked|failed")
   .option("--note <text>", "Evidence or note for this transition")
-  .action(async (opts: { status?: "complete" | "blocked" | "failed"; note?: string }) => {
-    await runOrchestrateAdvance(opts);
+  .option("--expected-revision <n>", "Reject if the run revision changed")
+  .action(async (opts: { status?: "complete" | "blocked" | "failed"; note?: string; expectedRevision?: string }) => {
+    await runOrchestrateAdvance({ ...opts, expectedRevision: opts.expectedRevision === undefined ? undefined : Number(opts.expectedRevision) });
+  });
+
+orchestrate
+  .command("reopen")
+  .description("Reopen an earlier orchestration step with audit trail")
+  .option("--step <step>", "Step id to reopen")
+  .option("--reason <text>", "Reason for reopening")
+  .option("--expected-revision <n>", "Reject if the run revision changed")
+  .action(async (opts: { step?: string; reason?: string; expectedRevision?: string }) => {
+    await runOrchestrateReopen({ ...opts, expectedRevision: opts.expectedRevision === undefined ? undefined : Number(opts.expectedRevision) });
+  });
+
+const orchestrateScope = orchestrate
+  .command("scope")
+  .description("Manage active orchestration scope");
+
+orchestrateScope
+  .command("add")
+  .description("Add scope globs to the active orchestration run")
+  .option("--scope <glob>", "Scope glob(s), comma-separated")
+  .option("--reason <text>", "Reason for expanding scope")
+  .option("--expected-revision <n>", "Reject if the run revision changed")
+  .action(async (opts: { scope?: string; reason?: string; expectedRevision?: string }) => {
+    await runOrchestrateScopeAdd({ ...opts, expectedRevision: opts.expectedRevision === undefined ? undefined : Number(opts.expectedRevision) });
+  });
+
+orchestrate
+  .command("verify")
+  .description("Run the active contract verification commands and record evidence")
+  .option("--expected-revision <n>", "Reject if the run revision changed")
+  .action(async (opts: { expectedRevision?: string }) => {
+    await runOrchestrateVerify({ expectedRevision: opts.expectedRevision === undefined ? undefined : Number(opts.expectedRevision) });
   });
 
 orchestrate
@@ -353,7 +403,7 @@ orchestrate
     runOrchestrateEvent(opts);
   });
 
-program
+const contextCommand = program
   .command("context")
   .description("Session context for agent hooks")
   .option("--inject", "Output focus, learnings, and open decisions for session start")
@@ -368,9 +418,42 @@ program
 program
   .command("checkpoint")
   .description("Session stop hook: sync agent targets and nudge learn")
-  .action(async () => {
-    await runCheckpoint();
+  .option("--minimal", "Skip durable writes when generated outputs are already current", false)
+  .option("--no-persist", "Preview checkpoint without writing sync output or runtime events")
+  .action(async (opts: { minimal?: boolean; persist?: boolean }) => {
+    await runCheckpoint({
+      minimal: opts.minimal,
+      noPersist: opts.persist === false,
+    });
   });
+
+contextCommand
+  .command("explain")
+  .description("Explain context inclusion, priority, and budget decisions")
+  .action(async () => { await runContextExplain(); });
+
+program
+  .command("run")
+  .description("Run artifacts and reports")
+  .command("report")
+  .option("--run <id>", "Run id (defaults to active run)")
+  .action((opts: { run?: string }) => { runRunReport(opts); });
+
+program
+  .command("trace")
+  .description("Local run tracing")
+  .command("export")
+  .requiredOption("--format <format>", "Export format: otlp-json")
+  .option("--run <id>", "Run id (defaults to active run)")
+  .action((opts: { format?: string; run?: string }) => { runTraceExport(opts); });
+
+const approval = program.command("approval").description("Time-bound approvals for risky commands");
+approval.command("grant").requiredOption("--request <id>", "Approval request id").option("--reason <text>", "Why this is safe").action((opts) => runApprovalDecision(opts, true));
+approval.command("deny").requiredOption("--request <id>", "Approval request id").option("--reason <text>", "Reason for denial").action((opts) => runApprovalDecision(opts, false));
+
+const evalCommand = program.command("eval").description("Local harness regression checks");
+evalCommand.command("run").option("--suite <name>", "Suite name", "default").action((opts) => runEval(opts));
+evalCommand.command("compare").requiredOption("--baseline <file>", "Baseline eval JSON").action((opts) => runEvalCompare(opts));
 
 const srs = program.command("srs").description("SRS integration");
 

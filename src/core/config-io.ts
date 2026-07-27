@@ -4,16 +4,28 @@ import {
   agentContextConfigSchema,
   defaultAgentContextConfig,
   defaultConfig,
+  defaultContextConfig,
+  defaultEvalConfig,
   defaultGateConfig,
   defaultHooksConfig,
+  defaultObservabilityConfig,
   defaultOrchestrationConfig,
+  defaultRuntimeConfig,
   gateConfigSchema,
   harnessConfigSchema,
   hooksConfigSchema,
+  contextConfigSchema,
+  evalConfigSchema,
+  observabilityConfigSchema,
   type AgentContextConfig,
+  type ContextConfig,
+  type EvalConfig,
   type GateConfig,
   type HarnessConfig,
   type HooksConfig,
+  type ObservabilityConfig,
+  runtimeConfigSchema,
+  type RuntimeConfig,
   orchestrationConfigSchema,
   type OrchestrationConfig,
 } from "./config";
@@ -40,6 +52,40 @@ function mergeOrchestrationConfig(raw: unknown): OrchestrationConfig {
     ...defaultOrchestrationConfig(),
     ...partial,
   });
+}
+
+function mergeRuntimeConfig(raw: unknown): RuntimeConfig {
+  if (raw === undefined || raw === null) {
+    return defaultRuntimeConfig();
+  }
+  const partial = runtimeConfigSchema.partial().parse(raw);
+  return runtimeConfigSchema.parse({
+    ...defaultRuntimeConfig(),
+    ...partial,
+  });
+}
+
+function mergeContextConfig(raw: unknown): ContextConfig {
+  if (raw === undefined || raw === null) {
+    return defaultContextConfig();
+  }
+  const partial = contextConfigSchema.partial().parse(raw);
+  return contextConfigSchema.parse({
+    ...defaultContextConfig(),
+    ...partial,
+  });
+}
+
+function mergeObservabilityConfig(raw: unknown): ObservabilityConfig {
+  if (raw === undefined || raw === null) return defaultObservabilityConfig();
+  const partial = observabilityConfigSchema.partial().parse(raw);
+  return observabilityConfigSchema.parse({ ...defaultObservabilityConfig(), ...partial });
+}
+
+function mergeEvalConfig(raw: unknown): EvalConfig {
+  if (raw === undefined || raw === null) return defaultEvalConfig();
+  const partial = evalConfigSchema.partial().parse(raw);
+  return evalConfigSchema.parse({ ...defaultEvalConfig(), ...partial });
 }
 
 function mergeHooksConfig(raw: unknown): HooksConfig {
@@ -122,6 +168,10 @@ function normalizeConfig(raw: unknown): HarnessConfig {
     ...defaults,
     ...record,
     agentContext: mergeAgentContextConfig(record.agentContext),
+    runtime: mergeRuntimeConfig(record.runtime),
+    context: mergeContextConfig(record.context),
+    observability: mergeObservabilityConfig(record.observability),
+    eval: mergeEvalConfig(record.eval),
     gate: mergeGateConfig(record.gate),
     orchestration: mergeOrchestrationConfig(record.orchestration),
     hooks: mergeHooksConfig(record.hooks),

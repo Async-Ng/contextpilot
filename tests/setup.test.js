@@ -51,6 +51,8 @@ test("setup on a fresh project creates harness storage and generated protocol", 
     assert.ok(fs.existsSync(path.join(cwd, ".contextpilot", "harness.config.json")));
     assert.ok(fs.existsSync(path.join(cwd, ".contextpilot", "orchestration", "runs.jsonl")));
     assert.ok(fs.existsSync(path.join(cwd, ".contextpilot", "orchestration", "events.jsonl")));
+    assert.ok(fs.existsSync(path.join(cwd, ".contextpilot", "runtime")));
+    assert.match(fs.readFileSync(path.join(cwd, ".gitignore"), "utf8"), /\.contextpilot\/runtime\//);
     assert.equal(readState(cwd).srs.status, "missing");
     const config = JSON.parse(
       fs.readFileSync(path.join(cwd, ".contextpilot", "harness.config.json"), "utf8"),
@@ -65,6 +67,42 @@ test("setup on a fresh project creates harness storage and generated protocol", 
     assert.match(agentsMd, /small technical tasks/);
     assert.doesNotMatch(agentsMd, /User Interaction Rule/);
     assert.match(agentsMd, /SRS Bootstrap Required/);
+  });
+});
+
+test("generated state stores project-relative paths", () => {
+  withTempProject((cwd) => {
+    runJson(cwd, ["setup", "--no-git"]);
+
+    const state = readState(cwd);
+    assert.ok(Object.keys(state.generated).length > 0);
+    for (const key of Object.keys(state.generated)) {
+      assert.equal(path.isAbsolute(key), false);
+      assert.doesNotMatch(key, /\\/);
+    }
+  });
+});
+
+test("old absolute generated state keys normalize on save", () => {
+  withTempProject((cwd) => {
+    runJson(cwd, ["setup", "--no-git"]);
+    const statePath = path.join(cwd, ".contextpilot", "state.json");
+    const state = readState(cwd);
+    const agentsPath = path.join(cwd, "AGENTS.md");
+    state.generated = {
+      [agentsPath]: {
+        hash: state.generated["AGENTS.md"].hash,
+        writtenAt: state.generated["AGENTS.md"].writtenAt,
+      },
+    };
+    fs.writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+
+    const result = runJson(cwd, ["sync"]);
+
+    assert.equal(result.code, 0);
+    const next = readState(cwd);
+    assert.ok(next.generated["AGENTS.md"]);
+    assert.equal(next.generated[agentsPath], undefined);
   });
 });
 
@@ -206,5 +244,24 @@ test("context inject includes user-invisible automation guidance", () => {
     assert.equal(result.code, 0);
     assert.match(result.json.text, /Agent Automation Contract/);
     assert.match(result.json.text, /The user should chat normally/);
+  });
+});
+
+test("context inject omits expired focus and reports stale metadata", () => {
+  withTempProject((cwd) => {
+    runJson(cwd, ["setup", "--no-git"]);
+    runJson(cwd, ["focus", "Build initial SRS"]);
+    const metaPath = path.join(cwd, ".contextpilot", "context", "current.md.meta.json");
+    const meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
+    meta.expiresAt = "2000-01-01T00:00:00.000Z";
+    fs.writeFileSync(metaPath, `${JSON.stringify(meta, null, 2)}\n`, "utf8");
+
+    const result = runJson(cwd, ["context", "--inject"]);
+
+    assert.equal(result.code, 0);
+    assert.equal(result.json.focus, "");
+    assert.equal(result.json.focusInfo.stale, true);
+    assert.equal(result.json.focusInfo.staleReason, "expired");
+    assert.doesNotMatch(result.json.text, /Build initial SRS/);
   });
 });

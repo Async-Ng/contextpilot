@@ -17,7 +17,7 @@ half-finished multi-step tasks with no record of what's left. ContextPilot fixes
 agents:
 
 - a place to **persist** what they've learned (mistakes, constraints, decisions) across sessions,
-- a **workflow** (plan → implement → review → verify → checkpoint) for non-trivial tasks, with a
+- a **workflow** (plan → implement → verify → review → checkpoint) for non-trivial tasks, with a
   gate that blocks file edits outside the current step's scope,
 - a **discussion gate** that forces the agent to ask you before guessing at business logic, and
 - **drift detection**: whenever a tracked file (SRS docs, generated instructions, ingested
@@ -101,7 +101,7 @@ npx --no-install contextpilot doctor
 | Long-term context | Architecture, conventions, business rules, ingested SRS knowledge | `.contextpilot/rules/*.md` |
 | Short-term focus | What the current task is | `.contextpilot/context/current.md` |
 | Memory | Learnings from past mistakes/constraints | `.contextpilot/memory/learnings.jsonl` |
-| Orchestration | Active run, workflow steps, trace events | `.contextpilot/orchestration/*.jsonl` |
+| Orchestration | Durable run contracts, steps, evidence, and trace events | runtime storage by default when configured |
 | Decisions | Open/resolved business-logic questions | `.contextpilot/decisions/decisions.jsonl` |
 
 ### The discussion gate
@@ -129,12 +129,25 @@ contextpilot orchestrate start --goal "Add refund policy validation" --scope "sr
 ```
 
 The run walks through 5 built-in steps — `plan` → `implement` → `review` → `verify` →
-`checkpoint` — each with a role and instructions injected via `context --inject`. The agent
+`checkpoint` — each with a role and instructions injected via `context --inject`. A run also binds
+to its worktree and records a contract (scope, acceptance criteria, verification commands, risk,
+and permissions). The agent
 advances a step when it's done:
 
 ```bash
 contextpilot orchestrate advance --status complete --note "Plan reviewed" --json
 ```
+
+For a contract with checks, advance to `verify`, then record evidence instead of manually claiming
+success:
+
+```bash
+contextpilot orchestrate verify --json
+contextpilot run report --json
+```
+
+`context explain --json` shows the scoped, budgeted context manifest. `trace export --format otlp-json`
+exports local run events without enabling a remote telemetry service.
 
 `gate check` is step-aware: it blocks file edits outside the run's scope, and blocks edits
 entirely during non-edit steps (`plan`, `review`). Running `contextpilot checkpoint` while the
@@ -208,12 +221,13 @@ Most of these are meant to be run **by the agent**, not by you — after `setup`
 | `setup` | Human, once | One-time project setup |
 | `doctor` | Human / CI | Verify installation, hooks, and generated files |
 | `status` | Agent | Drift, pending rules, open decisions, orchestration state (`--fast` for lightweight mode) |
-| `context --inject` | Agent | Session-start context (focus, learnings, decisions, orchestration, drift) |
+| `context --inject` / `context explain` | Agent | Session context and the inclusion/budget manifest |
 | `learn` | Agent | Record a mistake/constraint learned this session |
 | `sync` | Agent | Regenerate every agent's instruction files (`--preview` to inspect first) |
 | `checkpoint` | Agent | End-of-task: sync + learn nudge + auto-complete orchestration if applicable |
 | `focus` | Agent | Update the current task focus |
-| `orchestrate start` / `advance` / `status` / `cancel` / `event` | Agent | Structured workflow control |
+| `orchestrate start` / `advance` / `verify` / `reopen` / `scope add` | Agent | Contract-aware workflow control and evidence |
+| `run report` / `trace export` / `eval run` | Agent / CI | Local audit, OTLP-shaped trace export, and harness regression checks |
 | `decision open` / `list` / `resolve` / `reject` | Agent (resolve may need you) | Business-logic discussion gate |
 | `srs status` / `bootstrap` / `ingest` / `install` | Agent | Requirements-doc ingestion |
 | `knowledge query` / `relevant` / `show` | Agent | Look up ingested knowledge |

@@ -16,19 +16,37 @@ import { runSync } from "../core/sync";
 export const CHECKPOINT_NUDGE =
   "Run `contextpilot learn` if you learned something this session.";
 
+export interface CheckpointOptions {
+  minimal?: boolean;
+  noPersist?: boolean;
+}
+
 /**
  * Session stop hook: sync agent targets and nudge the agent to record learnings.
  * Non-blocking - exit 0 unless sync fails.
  */
-export async function runCheckpoint(): Promise<void> {
+export async function runCheckpoint(options: CheckpointOptions = {}): Promise<void> {
   const harnessDir = requireHarness();
 
   try {
-    const result = await runSync(harnessDir, { allowDriftOverwrite: true });
+    let result;
+    if (options.minimal || options.noPersist) {
+      const preview = await runSync(harnessDir, {
+        allowDriftOverwrite: true,
+        dryRun: true,
+      });
+      if (options.noPersist || preview.written.length === 0) {
+        result = preview;
+      } else {
+        result = await runSync(harnessDir, { allowDriftOverwrite: true });
+      }
+    } else {
+      result = await runSync(harnessDir, { allowDriftOverwrite: true });
+    }
     let orchestration = getOrchestrationSummary(harnessDir);
     let orchestrationNote: string | undefined;
 
-    if (orchestration.activeRun && orchestration.activeStep) {
+    if (!options.noPersist && orchestration.activeRun && orchestration.activeStep) {
       const run = orchestration.activeRun;
       const step = orchestration.activeStep;
       appendOrchestrationEvent(harnessDir, {
@@ -67,14 +85,20 @@ export async function runCheckpoint(): Promise<void> {
       }
     }
 
-    const humanLines = [`${CHECKPOINT_NUDGE}\nSynced ${result.written.length} file(s).`];
+    const humanLines = [
+      options.noPersist
+        ? `${CHECKPOINT_NUDGE}\nNo-persist checkpoint preview: ${result.written.length} file(s) would change.`
+        : `${CHECKPOINT_NUDGE}\nSynced ${result.written.length} file(s).`,
+    ];
     if (orchestrationNote) {
       humanLines.push(orchestrationNote);
     }
 
     out(humanLines.join("\n"), {
       status: "checkpoint",
-      synced: true,
+      synced: !options.noPersist,
+      minimal: options.minimal ?? false,
+      noPersist: options.noPersist ?? false,
       nudge: CHECKPOINT_NUDGE,
       written: result.written,
       unchanged: result.unchanged,

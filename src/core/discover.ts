@@ -5,7 +5,7 @@ import fg from "fast-glob";
 import type { HarnessConfig } from "./config";
 import { loadConfig } from "./config-io";
 import { warn } from "./io";
-import { loadState } from "./state";
+import { loadState, toStatePathKey } from "./state";
 
 export type DiscoverLevel = "global" | "project";
 export type DiscoverKind = "rule" | "skill";
@@ -172,8 +172,7 @@ export function scanDiscoverItems(
         const adoptedKey = state.adopted[normalized] ?? state.adopted[relPath];
         if (adoptedKey) continue;
 
-        const generatedPaths = new Set(Object.keys(state.generated));
-        if (generatedPaths.has(normalized)) continue;
+        if (state.generated[toStatePathKey(harnessDir, normalized)]) continue;
 
         seen.add(normalized);
         items.push({

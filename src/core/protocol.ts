@@ -17,6 +17,11 @@ export const STANDARD_HARNESS_PROTOCOL = `## ContextPilot Protocol - invisible t
 - If "Active Orchestration" is present, follow the current step role/instructions and advance
   the workflow with \`contextpilot orchestrate advance --status complete --note "<evidence>" --json\`
   when the step is done. Do not edit files during non-edit orchestration steps.
+- During a verify step, run \`contextpilot orchestrate verify --json\` when the run contract has
+  verification commands; do not claim verification is complete without fresh evidence.
+- Treat the run worktree binding and permission envelope as authoritative. For a risky network or
+  destructive command, use the gate remediation and wait for a valid approval instead of retrying.
+- Use \`contextpilot context explain --json\` when injected context is missing, stale, or too broad.
 - When you make a mistake and fix it, OR discover a non-obvious system constraint,
   immediately record it:
   \`contextpilot learn --category <mistake|constraint|gotcha|decision> --severity <low|med|high> --title "<short>" --detail "<what and why>" --scope "<glob>" --json\`
@@ -62,6 +67,7 @@ export const STUB_HARNESS_PROTOCOL = `## ContextPilot Protocol - lightweight def
 - For small technical tasks (CI, dead code, rename, docs typo), do not start orchestration. Work normally, then run \`contextpilot sync --preview\` only if generated agent/context files may be affected.
 - Start orchestration only for non-trivial work: multi-file/module changes, business logic, migrations, risky refactors, or when the user asks for a structured workflow.
 - If there is Active Orchestration, follow its current step and advance it when the step is done.
+- In a verify step, run \`contextpilot orchestrate verify --json\` to record contract evidence.
 - If there are Open Decisions, ask the user the product/business question before changing scoped code.
 - Agent files are index-first. Use \`contextpilot knowledge relevant --file "<path>" --task code --limit 2 --json\`, then \`contextpilot knowledge show <id>\` for at most 1-2 relevant items.
 - Treat non-empty SRS drift as required-before-done for business/spec work; ContextPilot may auto-ingest safe SRS drift, but if it reports a conflict, run the suggested ingest manually.

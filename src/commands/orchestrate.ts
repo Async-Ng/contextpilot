@@ -2,11 +2,16 @@ import {
   advanceRun,
   appendOrchestrationEvent,
   cancelRun,
+  expandRunScope,
   getActiveStep,
   getOrchestrationSummary,
+  reopenRun,
   startRun,
+  runVerification,
 } from "../core/orchestration";
-import type { OrchestrationWorkflow } from "../core/orchestration-schema";
+import { runContractSchema, type OrchestrationWorkflow } from "../core/orchestration-schema";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import {
   EXIT_GENERAL,
   EXIT_OK,
@@ -20,11 +25,14 @@ export interface OrchestrateStartOptions {
   goal?: string;
   scope?: string;
   workflow?: string;
+  preset?: string;
+  contract?: string;
 }
 
 export interface OrchestrateAdvanceOptions {
   status?: "complete" | "blocked" | "failed";
   note?: string;
+  expectedRevision?: number;
 }
 
 export interface OrchestrateCancelOptions {
@@ -36,8 +44,27 @@ export interface OrchestrateEventOptions {
   message?: string;
 }
 
+export interface OrchestrateReopenOptions {
+  step?: string;
+  reason?: string;
+  expectedRevision?: number;
+}
+
+export interface OrchestrateScopeAddOptions {
+  scope?: string;
+  reason?: string;
+  expectedRevision?: number;
+}
+
+export interface OrchestrateVerifyOptions { expectedRevision?: number; }
+
 function parseScope(scope: string): string[] {
   return scope.split(",").map((s) => s.trim()).filter(Boolean);
+}
+
+function readContract(cwd: string, contractPath?: string) {
+  if (!contractPath) return undefined;
+  return runContractSchema.parse(JSON.parse(fs.readFileSync(path.resolve(cwd, contractPath), "utf8")));
 }
 
 function fail(message: string, jsonObj: unknown): never {
@@ -65,11 +92,22 @@ export async function runOrchestrateStart(
     });
   }
 
+  const preset = options.preset ?? "coding";
+  if (!["coding", "lightweight"].includes(preset)) {
+    fail(`Unknown orchestration preset: ${preset}`, {
+      error: "unknown_preset",
+      preset,
+      supported: ["coding", "lightweight"],
+    });
+  }
+
   try {
     const run = await startRun(harnessDir, {
       goal: options.goal,
       scope: parseScope(options.scope),
       workflow,
+      preset: preset as "coding" | "lightweight",
+      contract: readContract(path.dirname(harnessDir), options.contract),
     });
     const step = getActiveStep(run);
     out(`Orchestration started: ${run.id}\nCurrent step: ${step?.title ?? "none"}`, {
@@ -81,6 +119,65 @@ export async function runOrchestrateStart(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     fail(message, { error: "orchestration_start_failed", message });
+  }
+}
+
+export async function runOrchestrateReopen(
+  options: OrchestrateReopenOptions,
+): Promise<void> {
+  const harnessDir = requireHarness();
+  if (!options.step) {
+    exitMissingFlag("--step", "Step to reopen, e.g. --step implement.");
+  }
+  if (!options.reason) {
+    exitMissingFlag("--reason", "Explain why this step is being reopened.");
+  }
+  try {
+    const run = await reopenRun(harnessDir, {
+      stepId: options.step,
+      reason: options.reason,
+      expectedRevision: options.expectedRevision,
+    });
+    const step = getActiveStep(run);
+    out(`Orchestration reopened: ${run.id}\nCurrent step: ${step?.title ?? "none"}`, {
+      status: "reopened",
+      run,
+      activeStep: step,
+    });
+    process.exit(EXIT_OK);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    fail(message, { error: "orchestration_reopen_failed", message });
+  }
+}
+
+export async function runOrchestrateScopeAdd(
+  options: OrchestrateScopeAddOptions,
+): Promise<void> {
+  const harnessDir = requireHarness();
+  if (!options.scope) {
+    exitMissingFlag("--scope", 'Scope glob(s) to add, e.g. --scope ".github/**".');
+  }
+  if (!options.reason) {
+    exitMissingFlag("--reason", "Explain why the scope needs to expand.");
+  }
+  try {
+    const result = await expandRunScope(harnessDir, {
+      scope: parseScope(options.scope),
+      reason: options.reason,
+      expectedRevision: options.expectedRevision,
+    });
+    out(`Orchestration scope expanded: ${result.run.id}`, {
+      status: "scope_expanded",
+      run: result.run,
+      previousScope: result.previousScope,
+      nextScope: result.nextScope,
+      addedScope: result.addedScope,
+    });
+    process.exit(EXIT_OK);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    fail(message, { error: "orchestration_scope_add_failed", message });
   }
 }
 
@@ -123,6 +220,7 @@ export async function runOrchestrateAdvance(
     const run = await advanceRun(harnessDir, {
       status: options.status,
       note: options.note,
+      expectedRevision: options.expectedRevision,
     });
     const step = getActiveStep(run);
     out(
@@ -135,6 +233,22 @@ export async function runOrchestrateAdvance(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     fail(message, { error: "orchestration_advance_failed", message });
+  }
+}
+
+export async function runOrchestrateVerify(options: OrchestrateVerifyOptions): Promise<void> {
+  const harnessDir = requireHarness();
+  try {
+    const run = await runVerification(harnessDir, options.expectedRevision);
+    out(`Verification recorded for ${run.id}.`, {
+      status: "verification_recorded",
+      run,
+      activeStep: getActiveStep(run),
+    });
+    process.exit(EXIT_OK);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    fail(message, { error: "verification_failed", message });
   }
 }
 

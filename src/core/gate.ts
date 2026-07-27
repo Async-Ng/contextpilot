@@ -3,10 +3,12 @@ import { defaultGateConfig, type HarnessConfig } from "./config";
 import { loadConfig } from "./config-io";
 import { listOpenDecisions, readAllDecisions } from "./decisions";
 import { warn } from "./io";
+import { findValidApproval, requestApproval } from "./approvals";
 import { readActiveLearnings } from "./memory";
 import {
   appendOrchestrationEvent,
   getActiveStep,
+  getWorktreeMismatch,
   getOrchestrationSummary,
 } from "./orchestration";
 import { getSrsStatus } from "./srs-state";
@@ -190,6 +192,10 @@ function evaluateFile(
     const summary = getOrchestrationSummary(harnessDir);
     const run = summary.activeRun;
     if (run) {
+      const mismatch = getWorktreeMismatch(harnessDir, run);
+      if (mismatch) {
+        return orchestrationDeny(harnessDir, run.id, undefined, `${mismatch} Run: contextpilot orchestrate start --goal "<goal>" --scope "<scope>" --json`);
+      }
       const step = getActiveStep(run);
       if (run.status === "blocked" || run.status === "failed") {
         return orchestrationDeny(
@@ -204,15 +210,19 @@ function evaluateFile(
           harnessDir,
           run.id,
           step?.id,
-          `File "${relFile}" is outside active orchestration scope (${run.scope.join(", ")}).`,
+          `File "${relFile}" is outside active orchestration scope (${run.scope.join(", ")}). ` +
+            `To expand scope with audit trail, run: contextpilot orchestrate scope add --scope "${relFile}" --reason "<why this file is needed>" --json`,
         );
       }
       if (step && !step.allowedActions.includes("edit")) {
+        const reopenHint = ["review", "verify"].includes(step.id)
+          ? " To fix review/verification findings, run: contextpilot orchestrate reopen --step implement --reason \"<why edits are needed>\" --json"
+          : "";
         return orchestrationDeny(
           harnessDir,
           run.id,
           step.id,
-          `Current orchestration step "${step.id}" (${step.role}) does not allow file edits. Complete or advance the step first.`,
+          `Current orchestration step "${step.id}" (${step.role}) does not allow file edits. Complete or advance the step first.${reopenHint}`,
         );
       }
     }
@@ -221,7 +231,13 @@ function evaluateFile(
   return { decision: "allow", reason: "" };
 }
 
-function evaluateCommand(harnessDir: string): GateResult {
+function commandRisk(command: string): "network" | "destructive" | undefined {
+  if (/\b(curl|wget|npm\s+(install|publish)|git\s+push)\b/i.test(command)) return "network";
+  if (/\b(rm\s+-[rf]|del\s+\/s|git\s+(reset\s+--hard|clean)|drop\s+(database|table)|truncate\s+table)\b/i.test(command)) return "destructive";
+  return undefined;
+}
+
+function evaluateCommand(harnessDir: string, command: string): GateResult {
   const open = listOpenDecisions(harnessDir);
   if (open.length > 0) {
     const first = open[0];
@@ -230,6 +246,28 @@ function evaluateCommand(harnessDir: string): GateResult {
         decision: "deny",
         reason: openDecisionDenyReason(first.id, first.question),
       };
+    }
+  }
+  const summary = getOrchestrationSummary(harnessDir);
+  const run = summary.activeRun;
+  if (run) {
+    const mismatch = getWorktreeMismatch(harnessDir, run);
+    if (mismatch) return orchestrationDeny(harnessDir, run.id, summary.activeStep?.id, mismatch);
+    if (!run.contract.permissions.execute) {
+      return orchestrationDeny(harnessDir, run.id, summary.activeStep?.id, "Run contract does not permit command execution.");
+    }
+    const risk = commandRisk(command);
+    if (risk && !run.contract.permissions[risk === "network" ? "network" : "destructive"]) {
+      const approval = findValidApproval(harnessDir, run.id, command);
+      if (!approval) {
+        const requested = requestApproval(harnessDir, run.id, command, risk);
+        return orchestrationDeny(
+          harnessDir,
+          run.id,
+          summary.activeStep?.id,
+          `Command requires ${risk} approval. Run: contextpilot approval grant --request ${requested.id} --reason "<why this is safe>" --json`,
+        );
+      }
     }
   }
   return { decision: "allow", reason: "" };
@@ -264,7 +302,7 @@ export function evaluate(harnessDir: string, input: GateInput): GateResult {
       return evaluateFile(harnessDir, config, input.file);
     }
     if (input.command) {
-      return evaluateCommand(harnessDir);
+      return evaluateCommand(harnessDir, input.command);
     }
     return { decision: "allow", reason: "" };
   } catch (err) {

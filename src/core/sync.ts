@@ -9,7 +9,13 @@ import { buildGlobalKnowledgeSummary } from "./knowledge-summary";
 import { STANDARD_HARNESS_PROTOCOL, STUB_HARNESS_PROTOCOL } from "./protocol";
 import { filterRulesForAgent, listRules, sortRules, type Rule } from "./rules";
 import { getSrsStatus } from "./srs-state";
-import { getStateFilePath, loadState, saveState, type HarnessState } from "./state";
+import {
+  getStateFilePath,
+  loadState,
+  saveState,
+  toStatePathKey,
+  type HarnessState,
+} from "./state";
 
 export interface SyncOptions {
   target?: string;
@@ -382,11 +388,12 @@ function buildCursorFiles(
 }
 
 function checkDrift(
+  harnessDir: string,
   state: HarnessState,
   outputPath: string,
   warnings: string[],
 ): boolean {
-  const entry = state.generated[outputPath];
+  const entry = state.generated[toStatePathKey(harnessDir, outputPath)];
   if (!entry) return false;
   const currentHash = sha256File(outputPath);
   if (currentHash && currentHash !== entry.hash) {
@@ -397,17 +404,19 @@ function checkDrift(
 }
 
 function writeOutput(
+  harnessDir: string,
   outputPath: string,
   content: string,
   state: HarnessState,
   sourceRuleId: string | undefined,
   dryRun: boolean,
 ): "written" | "unchanged" {
+  const stateKey = toStatePathKey(harnessDir, outputPath);
   const existing = fs.existsSync(outputPath) ? fs.readFileSync(outputPath, "utf8") : undefined;
   if (existing === content) {
-    if (!dryRun && state.generated[outputPath]) {
-      state.generated[outputPath] = {
-        ...state.generated[outputPath],
+    if (!dryRun && state.generated[stateKey]) {
+      state.generated[stateKey] = {
+        ...state.generated[stateKey],
         sourceRuleId,
       };
     }
@@ -415,7 +424,7 @@ function writeOutput(
   }
   if (dryRun) return "written";
   writeAtomic(outputPath, content);
-  state.generated[outputPath] = {
+  state.generated[stateKey] = {
     hash: sha256(content),
     writtenAt: new Date().toISOString(),
     sourceRuleId,
@@ -439,6 +448,7 @@ function measureSizeChange(
 }
 
 function cleanupStaleCursorFiles(
+  harnessDir: string,
   outputDir: string,
   currentFiles: Set<string>,
   state: HarnessState,
@@ -451,25 +461,27 @@ function cleanupStaleCursorFiles(
     if (!currentFiles.has(file)) {
       if (!dryRun) {
         fs.unlinkSync(fullPath);
-        delete state.generated[fullPath];
+        delete state.generated[toStatePathKey(harnessDir, fullPath)];
       }
     }
   }
 }
 
 function cleanupStaleKnowledgeIndex(
+  harnessDir: string,
   outputPath: string,
   state: HarnessState,
   dryRun: boolean,
 ): void {
-  if (!state.generated[outputPath]) {
+  const stateKey = toStatePathKey(harnessDir, outputPath);
+  if (!state.generated[stateKey]) {
     return;
   }
   if (!dryRun && fs.existsSync(outputPath)) {
     fs.unlinkSync(outputPath);
   }
   if (!dryRun) {
-    delete state.generated[outputPath];
+    delete state.generated[stateKey];
   }
 }
 
@@ -556,7 +568,7 @@ export async function runSync(
         projectRoot,
         knowledgeRules,
       );
-      const hasDrift = checkDrift(state, knowledgeIndexPath, warnings);
+      const hasDrift = checkDrift(harnessDir, state, knowledgeIndexPath, warnings);
       if (hasDrift && !allowDrift) {
         skipped.push(knowledgeIndexPath);
       } else {
@@ -564,11 +576,11 @@ export async function runSync(
           warn(`Overwriting drifted file: ${knowledgeIndexPath}`);
         }
         measureSizeChange(knowledgeIndexPath, content, sizeSummary);
-        const action = writeOutput(knowledgeIndexPath, content, state, undefined, dryRun);
+        const action = writeOutput(harnessDir, knowledgeIndexPath, content, state, undefined, dryRun);
         (action === "written" ? written : unchanged).push(knowledgeIndexPath);
       }
     } else {
-      cleanupStaleKnowledgeIndex(knowledgeIndexPath, state, dryRun);
+      cleanupStaleKnowledgeIndex(harnessDir, knowledgeIndexPath, state, dryRun);
     }
 
     for (const agent of agents) {
@@ -579,6 +591,7 @@ export async function runSync(
         const outputDir = path.join(projectRoot, outputRel);
         const cursorFiles = buildCursorFiles(config, harnessDir, rules);
         cleanupStaleCursorFiles(
+          harnessDir,
           outputDir,
           new Set(cursorFiles.keys()),
           state,
@@ -586,7 +599,7 @@ export async function runSync(
         );
         for (const [filename, content] of cursorFiles) {
           const fullPath = path.join(outputDir, filename);
-          const hasDrift = checkDrift(state, fullPath, warnings);
+          const hasDrift = checkDrift(harnessDir, state, fullPath, warnings);
           if (hasDrift && !allowDrift) {
             skipped.push(fullPath);
             continue;
@@ -595,12 +608,12 @@ export async function runSync(
             warn(`Overwriting drifted file: ${fullPath}`);
           }
           measureSizeChange(fullPath, content, sizeSummary);
-          const action = writeOutput(fullPath, content, state, undefined, dryRun);
+          const action = writeOutput(harnessDir, fullPath, content, state, undefined, dryRun);
           (action === "written" ? written : unchanged).push(fullPath);
         }
       } else {
         const fullPath = path.join(projectRoot, outputRel);
-        const hasDrift = checkDrift(state, fullPath, warnings);
+        const hasDrift = checkDrift(harnessDir, state, fullPath, warnings);
         if (hasDrift && !allowDrift) {
           skipped.push(fullPath);
           continue;
@@ -616,7 +629,7 @@ export async function runSync(
           warnings,
         );
         measureSizeChange(fullPath, content, sizeSummary);
-        const action = writeOutput(fullPath, content, state, undefined, dryRun);
+        const action = writeOutput(harnessDir, fullPath, content, state, undefined, dryRun);
         (action === "written" ? written : unchanged).push(fullPath);
       }
     }
@@ -631,9 +644,10 @@ export async function runSync(
             target.output,
             `${rule.id}.mdc`,
           );
-          if (state.generated[fullPath]) {
-            state.generated[fullPath] = {
-              ...state.generated[fullPath],
+          const stateKey = toStatePathKey(harnessDir, fullPath);
+          if (state.generated[stateKey]) {
+            state.generated[stateKey] = {
+              ...state.generated[stateKey],
               sourceRuleId: rule.id,
             };
           }

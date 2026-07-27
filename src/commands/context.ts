@@ -1,6 +1,6 @@
 ﻿import type { AgentName } from "../core/config";
 import { loadConfig } from "../core/config-io";
-import { readFocus } from "../core/context";
+import { readFocusInfo, type FocusInfo } from "../core/context";
 import { listOpenDecisions, type Decision } from "../core/decisions";
 import { EXIT_OK, out, requireHarness } from "../core/io";
 import { queryKnowledge } from "../core/knowledge";
@@ -32,12 +32,14 @@ export interface ContextInjectLearning {
 
 export interface ContextInjectPayload {
   focus: string;
+  focusInfo: FocusInfo;
   learnings: ContextInjectLearning[];
   openDecisions: Decision[];
   orchestration: OrchestrationSummary;
   srsDrift: SrsFileDrift[];
   autoIngest: AutoIngestSrsResult;
   suggestedKnowledge: Array<{ id: string; title: string; hint: string }>;
+  contextManifest: Array<{ id: string; source: string; reason: string; priority: number; tokenEstimate: number; included: boolean }>;
   text: string;
 }
 
@@ -77,6 +79,7 @@ function formatOrchestrationSection(summary: OrchestrationSummary): string {
     `Goal: ${run.goal}`,
     `Workflow: ${run.workflow}`,
     `Scope: ${run.scope.join(", ")}`,
+    `Risk: ${run.contract.riskLevel}; packs: ${run.contract.packs.join(", ") || "none"}`,
     `Current step: ${step.id} - ${step.title}`,
     `Role: ${step.role}`,
     `Allowed actions: ${step.allowedActions.join(", ")}`,
@@ -205,6 +208,7 @@ function formatInjectText(
   srsDrift: SrsFileDrift[],
   autoIngest: AutoIngestSrsResult,
   suggestedKnowledge: Array<{ id: string; title: string; hint: string }>,
+  contextManifest: ContextInjectPayload["contextManifest"],
 ): string {
   const sections: string[] = ["# Harness Session Context", ""];
 
@@ -249,6 +253,11 @@ function formatInjectText(
     sections.push(suggestedText, "");
   }
 
+  const omitted = contextManifest.filter((item) => !item.included);
+  if (omitted.length > 0) {
+    sections.push("## Context Budget", "", `Omitted ${omitted.length} lower-priority or stale context item(s). Run \`context explain --json\` for details.`, "");
+  }
+
   return sections.join("\n").trim();
 }
 
@@ -260,12 +269,26 @@ export async function formatInjectPayload(harnessDir: string): Promise<ContextIn
   const autoIngest = await autoIngestSrsDrift(harnessDir);
   const config = loadConfig(harnessDir);
   const maxLearnings = Math.min(config.maxLearningsPerFile, INJECT_MAX_LEARNINGS);
-  const focus = readFocus(harnessDir);
+  const focusInfo = readFocusInfo(harnessDir);
+  const focus = focusInfo.stale ? "" : focusInfo.text;
   const sorted = sortLearnings(readActiveLearnings(harnessDir)).slice(0, maxLearnings);
   const openDecisions = listOpenDecisions(harnessDir);
   const orchestration = getOrchestrationSummary(harnessDir);
   const srsDrift = getSrsFileDrift(harnessDir);
   const suggestedKnowledge = resolveSuggestedKnowledge(harnessDir, orchestration, focus);
+  const candidates = [
+    focus ? { id: "focus", source: "focus", reason: "current focus", priority: 100, tokenEstimate: Math.ceil(focus.length / 4) } : undefined,
+    orchestration.activeRun ? { id: `run:${orchestration.activeRun.id}`, source: "run-contract", reason: "active run", priority: 95, tokenEstimate: Math.ceil(JSON.stringify(orchestration.activeRun.contract).length / 4) } : undefined,
+    ...sorted.map((learning) => ({ id: learning.id, source: "learning", reason: "active learning", priority: learning.pinned ? 80 : 50, tokenEstimate: Math.ceil((learning.title.length + learning.detail.length) / 4) })),
+    ...openDecisions.map((decision) => ({ id: decision.id, source: "decision", reason: "open decision", priority: 90, tokenEstimate: Math.ceil((decision.question.length + (decision.detail?.length ?? 0)) / 4) })),
+    ...suggestedKnowledge.map((item) => ({ id: item.id, source: "knowledge", reason: "scope match", priority: 40, tokenEstimate: Math.ceil((item.title.length + item.hint.length) / 4) })),
+  ].filter((item): item is NonNullable<typeof item> => Boolean(item)).sort((a, b) => b.priority - a.priority);
+  let remaining = config.context.maxTokens;
+  const contextManifest = candidates.map((item) => {
+    const included = item.tokenEstimate <= remaining;
+    if (included) remaining -= item.tokenEstimate;
+    return { ...item, included };
+  });
   const text = formatInjectText(
     focus,
     sorted,
@@ -274,10 +297,12 @@ export async function formatInjectPayload(harnessDir: string): Promise<ContextIn
     srsDrift,
     autoIngest,
     suggestedKnowledge,
+    contextManifest,
   );
 
   return {
     focus,
+    focusInfo,
     learnings: sorted.map((l) => ({
       id: l.id,
       category: l.category,
@@ -291,6 +316,7 @@ export async function formatInjectPayload(harnessDir: string): Promise<ContextIn
     srsDrift,
     autoIngest,
     suggestedKnowledge,
+    contextManifest,
     text,
   };
 }
@@ -304,13 +330,26 @@ export async function runContextInject(options: ContextInjectOptions = {}): Prom
   out(human, {
     status: "injected",
     focus: payload.focus,
+    focusInfo: payload.focusInfo,
     learnings: payload.learnings,
     openDecisions: payload.openDecisions,
     orchestration: payload.orchestration,
     srsDrift: payload.srsDrift,
     autoIngest: payload.autoIngest,
     suggestedKnowledge: payload.suggestedKnowledge,
+    contextManifest: payload.contextManifest,
     text: payload.text,
+  });
+  process.exit(EXIT_OK);
+}
+
+export async function runContextExplain(): Promise<void> {
+  const harnessDir = requireHarness();
+  const payload = await formatInjectPayload(harnessDir);
+  out("Context manifest generated.", {
+    status: "context_explained",
+    budgetTokens: loadConfig(harnessDir).context.maxTokens,
+    contextManifest: payload.contextManifest,
   });
   process.exit(EXIT_OK);
 }

@@ -17,7 +17,7 @@ import { scanDiscoverItems } from "./discover";
 import { getOrchestrationSummary, type OrchestrationSummary } from "./orchestration";
 import { getSrsFileDrift, getSrsStatus, type SrsFileDrift, type SrsStatusReport } from "./srs-state";
 import type { HarnessState } from "./state-schema";
-import { loadState } from "./state";
+import { loadState, resolveStatePathKey, toStatePathKey } from "./state";
 
 export type StatusMode = "full" | "fast";
 
@@ -167,13 +167,14 @@ function computeGeneratedState(
   const known: Record<string, HashEntry> = {};
   const current: Record<string, string | undefined> = {};
 
-  for (const [outputPath, entry] of Object.entries(state.generated)) {
-    known[outputPath] = { hash: entry.hash, recordedAt: entry.writtenAt };
+  for (const [stateKey, entry] of Object.entries(state.generated)) {
+    const outputPath = resolveStatePathKey(harnessDir, stateKey);
+    known[stateKey] = { hash: entry.hash, recordedAt: entry.writtenAt };
     if (!fs.existsSync(outputPath)) {
-      missing.push(outputPath);
+      missing.push(stateKey);
       continue;
     }
-    current[outputPath] = sha256File(outputPath) ?? undefined;
+    current[stateKey] = sha256File(outputPath) ?? undefined;
   }
 
   const drift = diffHashes(known, current)
@@ -296,11 +297,13 @@ export function hasStatusIssues(report: StatusReport): boolean {
 export function isHarnessGeneratedPath(
   filePath: string,
   state: HarnessState,
+  harnessDir?: string,
 ): boolean {
+  if (harnessDir) {
+    return Boolean(state.generated[toStatePathKey(harnessDir, filePath)]);
+  }
   const normalized = path.normalize(filePath);
-  return Object.keys(state.generated).some(
-    (p) => path.normalize(p) === normalized,
-  );
+  return Object.keys(state.generated).some((p) => path.normalize(p) === normalized);
 }
 
 export function getStatusActionHint(report: StatusReport, projectRoot: string): string {
