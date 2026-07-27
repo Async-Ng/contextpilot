@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.0 - Local-first reliability harness
+
+### Added
+
+- Contract-aware orchestration with worktree binding, run revisions, scoped permissions, and
+  bounded verification evidence via `orchestrate verify`.
+- Recovery graph for verification/review failures, audit reports (`run report`), context manifests
+  (`context explain`), local OTLP-shaped trace export, approvals, eval checks, and reusable packs.
+- Portable runtime state, commit classification, lightweight/no-persist checkpoints, controlled
+  scope expansion, and audited implementation reopen support.
+
+### Changed
+
+- State tracking now writes project-relative paths; existing absolute entries remain readable and
+  normalize on the next save.
+- Runtime artifacts can live in ignored project storage or an external user cache, keeping them
+  out of recommended commits by default.
+
 ## 0.4.2 - Light profile defaults
 
 ### Added
