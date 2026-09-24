@@ -16,6 +16,7 @@ import {
 } from "./commands/decision";
 import { runDiscover } from "./commands/discover";
 import { runDoctor } from "./commands/doctor";
+import { runDiagnoseDrift } from "./commands/diagnose-drift";
 import { runFocus } from "./commands/focus";
 import { runForget } from "./commands/forget";
 import {
@@ -112,6 +113,13 @@ program
   .option("--preview", "Alias for --dry-run with preview-focused output", false)
   .action(async (opts: { target?: string; dryRun?: boolean; preview?: boolean }) => {
     await runSyncCommand(opts);
+  });
+
+program
+  .command("diagnose-drift")
+  .description("Explain generated artifact drift and the sync action without writing")
+  .action(async () => {
+    await runDiagnoseDrift();
   });
 
 program

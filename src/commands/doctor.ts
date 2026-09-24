@@ -8,6 +8,7 @@ import { getGlobalOptions } from "../core/globals";
 import { getHarnessDir, out, EXIT_OK } from "../core/io";
 import { getOrchestrationSummary } from "../core/orchestration";
 import { getSrsStatus, type SrsStatusReport } from "../core/srs-state";
+import { computeStatus } from "../core/status-logic";
 
 export interface DoctorCheck {
   name: string;
@@ -17,6 +18,8 @@ export interface DoctorCheck {
 
 export interface DoctorReport {
   status: "ok" | "warn" | "fail";
+  health: "healthy" | "degraded";
+  warnings: string[];
   initialized: boolean;
   harnessDir: string;
   resolvedCommand: string;
@@ -149,6 +152,16 @@ export function runDoctor(): void {
       "warn",
     );
 
+    const generated = computeStatus(harnessDir, { fast: true });
+    check(
+      checks,
+      "generated artifact health",
+      generated.health === "healthy",
+      "generated artifacts are in sync",
+      `${generated.generated.missingCount} missing and ${generated.generated.driftCount} drifted generated artifact(s); run contextpilot sync`,
+      "warn",
+    );
+
     const claudeHooks = path.join(projectRoot, ".claude", "settings.json");
     const cursorHooks = path.join(projectRoot, ".cursor", "hooks.json");
     const codexHooks = path.join(projectRoot, ".codex", "hooks.json");
@@ -175,6 +188,8 @@ export function runDoctor(): void {
 
   const report: DoctorReport = {
     status: computeOverall(checks),
+    health: checks.some((item) => item.name === "generated artifact health" && item.status !== "pass") ? "degraded" : "healthy",
+    warnings: checks.filter((item) => item.status === "warn").map((item) => item.message),
     initialized,
     harnessDir,
     resolvedCommand: cliResolution.command,

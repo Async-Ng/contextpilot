@@ -1,4 +1,5 @@
 import * as path from "node:path";
+import * as fs from "node:fs";
 import chalk from "chalk";
 import { EXIT_OK, out, requireHarness } from "../core/io";
 import {
@@ -9,6 +10,7 @@ import {
   type StatusReport,
 } from "../core/status-logic";
 import { autoIngestSrsDrift } from "../core/srs-auto";
+import { runSync } from "../core/sync";
 
 export interface StatusCommandOptions {
   fast?: boolean;
@@ -35,10 +37,32 @@ export async function runStatus(options: StatusCommandOptions = {}): Promise<voi
   const harnessDir = requireHarness();
   const autoIngest = await autoIngestSrsDrift(harnessDir);
   const report = computeStatus(harnessDir, { fast: options.fast });
+  const reconciliation = await runSync(harnessDir, { dryRun: true, allowDriftOverwrite: true });
+  const actionPaths = [...reconciliation.written, ...reconciliation.metadataRefreshed, ...reconciliation.unchanged];
+  report.generatedArtifacts = actionPaths.map((artifactPath) => {
+    const state = reconciliation.written.includes(artifactPath)
+      ? (fs.existsSync(artifactPath) ? "content_drift" : "missing")
+      : reconciliation.metadataRefreshed.includes(artifactPath) ? "metadata_stale" : "in_sync";
+    return {
+      path: artifactPath,
+      state,
+      action: state === "in_sync" ? "none" : state === "metadata_stale" ? "refresh_metadata" : "regenerate",
+    };
+  });
+  report.drift = report.generatedArtifacts.filter((item) => item.state === "content_drift").map((item) => ({
+    path: item.path,
+    expectedHash: reconciliation.expectedHashes[item.path] ?? "",
+    actualHash: "",
+  }));
+  report.missing = report.generatedArtifacts.filter((item) => item.state === "missing").map((item) => item.path);
+  report.generated.missingCount = report.missing.length;
+  report.generated.driftCount = report.generatedArtifacts.filter((item) => item.state !== "in_sync").length;
+  report.health = report.generated.driftCount > 0 ? "degraded" : "healthy";
   const projectRoot = path.dirname(harnessDir);
   const hasIssues = hasStatusIssues(report);
 
   const lines: string[] = [chalk.bold("ContextPilot status:")];
+  lines.push(report.health === "healthy" ? chalk.green("Health: healthy") : chalk.yellow("Health: degraded"));
   lines.push(chalk.dim(getStatusConfidenceSummary(report)));
 
   if (report.drift.length > 0) {
@@ -52,6 +76,9 @@ export async function runStatus(options: StatusCommandOptions = {}): Promise<voi
     for (const m of report.missing) {
       lines.push(`  ${m}`);
     }
+  }
+  if (report.generatedArtifacts.some((item) => item.state === "metadata_stale")) {
+    lines.push(chalk.yellow(`Stale generated metadata (${report.generatedArtifacts.filter((item) => item.state === "metadata_stale").length}): run contextpilot sync`));
   }
   if (report.newExternal.length > 0) {
     lines.push(chalk.cyan(`New external (${report.newExternal.length}):`));

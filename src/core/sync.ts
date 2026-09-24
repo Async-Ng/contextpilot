@@ -3,7 +3,7 @@ import * as path from "node:path";
 import type { AgentName, HarnessConfig } from "./config";
 import { loadConfig, resolveProjectPath } from "./config-io";
 import { readFocus } from "./context";
-import { sha256, sha256File, warn, withLock, writeAtomic } from "./io";
+import { sha256, sha256File, withLock, writeAtomic } from "./io";
 import { formatLearningsSection, readActiveLearnings } from "./memory";
 import { buildGlobalKnowledgeSummary } from "./knowledge-summary";
 import { STANDARD_HARNESS_PROTOCOL, STUB_HARNESS_PROTOCOL } from "./protocol";
@@ -26,6 +26,8 @@ export interface SyncOptions {
 export interface SyncResult {
   written: string[];
   unchanged: string[];
+  metadataRefreshed: string[];
+  expectedHashes: Record<string, string>;
   skipped: string[];
   warnings: string[];
   sizeSummary: {
@@ -391,13 +393,12 @@ function checkDrift(
   harnessDir: string,
   state: HarnessState,
   outputPath: string,
-  warnings: string[],
+  _warnings: string[],
 ): boolean {
   const entry = state.generated[toStatePathKey(harnessDir, outputPath)];
   if (!entry) return false;
   const currentHash = sha256File(outputPath);
   if (currentHash && currentHash !== entry.hash) {
-    warnings.push(`Drift detected at ${outputPath} (manual edits)`);
     return true;
   }
   return false;
@@ -410,17 +411,20 @@ function writeOutput(
   state: HarnessState,
   sourceRuleId: string | undefined,
   dryRun: boolean,
-): "written" | "unchanged" {
+): "written" | "unchanged" | "metadata_refreshed" {
   const stateKey = toStatePathKey(harnessDir, outputPath);
   const existing = fs.existsSync(outputPath) ? fs.readFileSync(outputPath, "utf8") : undefined;
   if (existing === content) {
-    if (!dryRun && state.generated[stateKey]) {
+    const expectedHash = sha256(content);
+    const needsMetadataRefresh = state.generated[stateKey]?.hash !== expectedHash;
+    if (!dryRun && needsMetadataRefresh) {
       state.generated[stateKey] = {
-        ...state.generated[stateKey],
+        hash: expectedHash,
+        writtenAt: new Date().toISOString(),
         sourceRuleId,
       };
     }
-    return "unchanged";
+    return needsMetadataRefresh ? "metadata_refreshed" : "unchanged";
   }
   if (dryRun) return "written";
   writeAtomic(outputPath, content);
@@ -536,6 +540,8 @@ export async function runSync(
     const state = loadState(harnessDir);
     const written: string[] = [];
     const unchanged: string[] = [];
+    const metadataRefreshed: string[] = [];
+    const expectedHashes: Record<string, string> = {};
     const skipped: string[] = [];
     const warnings: string[] = [];
     const sizeSummary: SyncResult["sizeSummary"] = {
@@ -572,12 +578,10 @@ export async function runSync(
       if (hasDrift && !allowDrift) {
         skipped.push(knowledgeIndexPath);
       } else {
-        if (hasDrift) {
-          warn(`Overwriting drifted file: ${knowledgeIndexPath}`);
-        }
         measureSizeChange(knowledgeIndexPath, content, sizeSummary);
+        expectedHashes[knowledgeIndexPath] = sha256(content);
         const action = writeOutput(harnessDir, knowledgeIndexPath, content, state, undefined, dryRun);
-        (action === "written" ? written : unchanged).push(knowledgeIndexPath);
+        (action === "written" ? written : action === "metadata_refreshed" ? metadataRefreshed : unchanged).push(knowledgeIndexPath);
       }
     } else {
       cleanupStaleKnowledgeIndex(harnessDir, knowledgeIndexPath, state, dryRun);
@@ -604,12 +608,10 @@ export async function runSync(
             skipped.push(fullPath);
             continue;
           }
-          if (hasDrift) {
-            warn(`Overwriting drifted file: ${fullPath}`);
-          }
           measureSizeChange(fullPath, content, sizeSummary);
+          expectedHashes[fullPath] = sha256(content);
           const action = writeOutput(harnessDir, fullPath, content, state, undefined, dryRun);
-          (action === "written" ? written : unchanged).push(fullPath);
+          (action === "written" ? written : action === "metadata_refreshed" ? metadataRefreshed : unchanged).push(fullPath);
         }
       } else {
         const fullPath = path.join(projectRoot, outputRel);
@@ -617,9 +619,6 @@ export async function runSync(
         if (hasDrift && !allowDrift) {
           skipped.push(fullPath);
           continue;
-        }
-        if (hasDrift) {
-          warn(`Overwriting drifted file: ${fullPath}`);
         }
         const content = buildSingleFileContent(config, harnessDir, agent, rules);
         warnIfMainFileTooLarge(
@@ -629,8 +628,9 @@ export async function runSync(
           warnings,
         );
         measureSizeChange(fullPath, content, sizeSummary);
+        expectedHashes[fullPath] = sha256(content);
         const action = writeOutput(harnessDir, fullPath, content, state, undefined, dryRun);
-        (action === "written" ? written : unchanged).push(fullPath);
+        (action === "written" ? written : action === "metadata_refreshed" ? metadataRefreshed : unchanged).push(fullPath);
       }
     }
 
@@ -659,7 +659,7 @@ export async function runSync(
       saveState(harnessDir, state);
     }
 
-    return { written, unchanged, skipped, warnings, sizeSummary };
+    return { written, unchanged, metadataRefreshed, expectedHashes, skipped, warnings, sizeSummary };
   });
 }
 

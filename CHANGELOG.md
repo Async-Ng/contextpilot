@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.0 - Generated artifact reconciliation
+
+- Added shared generated-artifact health output to `status` and `doctor`, including `healthy` / `degraded` state.
+- `sync --preview` now reports baseline hash refreshes without writing, and `sync` automatically repairs stale metadata as well as missing or drifted generated output.
+- Added `contextpilot diagnose-drift` for a non-mutating, per-artifact reconciliation explanation.
+- Removed misleading preview-time "Overwriting drifted file" warnings.
+
 ## 0.5.0 - Local-first reliability harness
 
 ### Added

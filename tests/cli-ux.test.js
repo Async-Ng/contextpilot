@@ -112,6 +112,56 @@ test("sync --preview reports unchanged files instead of rewriting them", () => {
   });
 });
 
+test("sync reconciles stale generated metadata without rewriting the artifact", () => {
+  withTempProject((cwd) => {
+    runJson(cwd, ["setup", "--no-git"]);
+    const config = JSON.parse(fs.readFileSync(path.join(cwd, ".contextpilot", "harness.config.json"), "utf8"));
+    const statePath = path.resolve(cwd, config.stateFile);
+    const state = JSON.parse(fs.readFileSync(statePath, "utf8"));
+    const artifact = Object.keys(state.generated)[0];
+    state.generated[artifact].hash = "stale-baseline";
+    fs.writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+    const beforePreview = fs.readFileSync(statePath, "utf8");
+
+    const preview = runJson(cwd, ["sync", "--preview"]);
+    assert.deepEqual(preview.json.written, []);
+    assert.deepEqual(preview.json.metadataRefreshed, [path.join(cwd, artifact)]);
+    assert.equal(fs.readFileSync(statePath, "utf8"), beforePreview, "preview must not write state");
+
+    const status = runJson(cwd, ["status", "--fast"]);
+    assert.equal(status.json.health, "degraded");
+    assert.ok(status.json.generatedArtifacts.some((item) => item.path === path.join(cwd, artifact) && item.state === "metadata_stale" && item.action === "refresh_metadata"));
+
+    const diagnosis = runJson(cwd, ["diagnose-drift"]);
+    assert.equal(diagnosis.json.health, "degraded");
+    assert.ok(diagnosis.json.artifacts.some((item) => item.path === path.join(cwd, artifact) && item.state === "metadata_stale"));
+
+    const synced = runJson(cwd, ["sync"]);
+    assert.deepEqual(synced.json.metadataRefreshed, [path.join(cwd, artifact)]);
+    assert.equal(runJson(cwd, ["status", "--fast"]).json.health, "healthy");
+    assert.equal(runJson(cwd, ["doctor"]).json.health, "healthy");
+  });
+});
+
+test("diagnosis distinguishes missing and content-drifted generated artifacts", () => {
+  withTempProject((cwd) => {
+    runJson(cwd, ["setup", "--no-git"]);
+    const state = JSON.parse(fs.readFileSync(path.join(cwd, ".contextpilot", "state.json"), "utf8"));
+    const [drifted, missing] = Object.keys(state.generated);
+    fs.appendFileSync(path.join(cwd, drifted), "manual edit\n", "utf8");
+    fs.rmSync(path.join(cwd, missing));
+
+    const diagnosis = runJson(cwd, ["diagnose-drift"]);
+    assert.equal(diagnosis.json.health, "degraded");
+    assert.ok(diagnosis.json.artifacts.some((item) => item.path === path.join(cwd, drifted) && item.state === "content_drift"));
+    assert.ok(diagnosis.json.artifacts.some((item) => item.path === path.join(cwd, missing) && item.state === "missing"));
+    assert.equal(runJson(cwd, ["doctor"]).json.health, "degraded");
+
+    runJson(cwd, ["sync"]);
+    assert.equal(runJson(cwd, ["status", "--fast"]).json.health, "healthy");
+  });
+});
+
 test("gate precommit fail-opens when ContextPilot is not initialized", () => {
   withTempProject((cwd) => {
     const result = runJson(cwd, ["gate", "precommit"]);

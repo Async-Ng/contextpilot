@@ -48,7 +48,15 @@ export interface StatusGeneratedSummary {
   driftCount: number;
 }
 
+export interface GeneratedArtifactStatus {
+  path: string;
+  state: "in_sync" | "missing" | "content_drift" | "metadata_stale";
+  action: "none" | "regenerate" | "refresh_metadata";
+}
+
 export interface StatusReport {
+  health: "healthy" | "degraded";
+  generatedArtifacts: GeneratedArtifactStatus[];
   mode: StatusMode;
   drift: Array<{ path: string; expectedHash: string; actualHash: string }>;
   missing: string[];
@@ -84,6 +92,8 @@ function getLinkedRuleIds(state: HarnessState): Set<string> {
 
 function buildEmptyReport(mode: StatusMode, projectRoot: string): StatusReport {
   return {
+    health: "healthy",
+    generatedArtifacts: [],
     mode,
     drift: [],
     missing: [],
@@ -275,11 +285,16 @@ export function computeStatus(harnessDir: string, options: StatusOptions = {}): 
     skip: mode === "fast",
   });
 
+  report.health = report.drift.length > 0 || report.missing.length > 0
+    ? "degraded"
+    : "healthy";
+
   return report;
 }
 
 export function hasStatusIssues(report: StatusReport): boolean {
   return (
+    report.generatedArtifacts.some((artifact) => artifact.state !== "in_sync") ||
     report.drift.length > 0 ||
     report.missing.length > 0 ||
     report.newExternal.length > 0 ||
