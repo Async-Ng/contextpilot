@@ -162,6 +162,28 @@ test("diagnosis distinguishes missing and content-drifted generated artifacts", 
   });
 });
 
+test("impact reports direct, transitive, and test dependents without writing project files", () => {
+  withTempProject((cwd) => {
+    runJson(cwd, ["setup", "--no-git"]);
+    fs.mkdirSync(path.join(cwd, "src"), { recursive: true });
+    fs.writeFileSync(path.join(cwd, "src", "a.ts"), "export const a = 1;\n");
+    fs.writeFileSync(path.join(cwd, "src", "b.ts"), "import { a } from './a'; export const b = a;\n");
+    fs.writeFileSync(path.join(cwd, "src", "c.ts"), "import { b } from './b'; export const c = b;\n");
+    fs.writeFileSync(path.join(cwd, "src", "a.test.ts"), "import { a } from './a'; void a;\n");
+    const statePath = path.join(cwd, ".contextpilot", "state.json");
+    const before = fs.readFileSync(statePath, "utf8");
+
+    const result = runJson(cwd, ["impact", "--file", "src/a.ts"]);
+
+    assert.equal(result.code, 0);
+    assert.deepEqual(result.json.changed, ["src/a.ts"]);
+    assert.ok(result.json.directDependents.includes("src/b.ts"));
+    assert.ok(result.json.transitiveDependents.includes("src/c.ts"));
+    assert.ok(result.json.relatedTests.includes("src/a.test.ts"));
+    assert.equal(fs.readFileSync(statePath, "utf8"), before, "impact must be read-only");
+  });
+});
+
 test("gate precommit fail-opens when ContextPilot is not initialized", () => {
   withTempProject((cwd) => {
     const result = runJson(cwd, ["gate", "precommit"]);

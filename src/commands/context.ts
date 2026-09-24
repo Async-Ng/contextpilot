@@ -17,6 +17,7 @@ import {
 } from "../core/orchestration";
 import { autoIngestSrsDrift, type AutoIngestSrsResult } from "../core/srs-auto";
 import { getSrsFileDrift, type SrsFileDrift } from "../core/srs-state";
+import { analyzeImpact, type ImpactReport } from "../core/impact";
 
 /** Max learnings in session inject - keep hooks fast. */
 const INJECT_MAX_LEARNINGS = 10;
@@ -39,6 +40,7 @@ export interface ContextInjectPayload {
   srsDrift: SrsFileDrift[];
   autoIngest: AutoIngestSrsResult;
   suggestedKnowledge: Array<{ id: string; title: string; hint: string }>;
+  impactSummary?: Pick<ImpactReport, "changed" | "directDependents" | "transitiveDependents" | "relatedTests" | "outsideActiveScope" | "risk">;
   contextManifest: Array<{ id: string; source: string; reason: string; priority: number; tokenEstimate: number; included: boolean }>;
   text: string;
 }
@@ -154,6 +156,16 @@ function formatSuggestedKnowledgeSection(
   return lines.join("\n");
 }
 
+function formatImpactSection(impact?: ContextInjectPayload["impactSummary"]): string {
+  if (!impact) return "";
+  return [
+    "## Active Run Impact",
+    "",
+    `Risk: ${impact.risk}; direct dependents: ${impact.directDependents.length}; transitive dependents: ${impact.transitiveDependents.length}; related tests: ${impact.relatedTests.length}.`,
+    impact.outsideActiveScope.length ? `Suggested scope add: ${impact.outsideActiveScope.map((file) => `\`${file}\``).join(", ")}` : "",
+  ].filter(Boolean).join("\n");
+}
+
 function resolveSuggestedKnowledge(
   harnessDir: string,
   orchestration: OrchestrationSummary,
@@ -209,6 +221,7 @@ function formatInjectText(
   autoIngest: AutoIngestSrsResult,
   suggestedKnowledge: Array<{ id: string; title: string; hint: string }>,
   contextManifest: ContextInjectPayload["contextManifest"],
+  impactSummary?: ContextInjectPayload["impactSummary"],
 ): string {
   const sections: string[] = ["# Harness Session Context", ""];
 
@@ -223,6 +236,9 @@ function formatInjectText(
   if (orchestrationText) {
     sections.push(orchestrationText, "");
   }
+
+  const impactText = formatImpactSection(impactSummary);
+  if (impactText) sections.push(impactText, "");
 
   if (focus) {
     sections.push("## Current Focus", "", focus, "");
@@ -276,6 +292,8 @@ export async function formatInjectPayload(harnessDir: string): Promise<ContextIn
   const orchestration = getOrchestrationSummary(harnessDir);
   const srsDrift = getSrsFileDrift(harnessDir);
   const suggestedKnowledge = resolveSuggestedKnowledge(harnessDir, orchestration, focus);
+  const changedFiles = orchestration.activeRun?.scope.filter((scope) => /\.[jt]sx?$/.test(scope)) ?? [];
+  const impactSummary = changedFiles.length ? analyzeImpact(harnessDir, changedFiles) : undefined;
   const candidates = [
     focus ? { id: "focus", source: "focus", reason: "current focus", priority: 100, tokenEstimate: Math.ceil(focus.length / 4) } : undefined,
     orchestration.activeRun ? { id: `run:${orchestration.activeRun.id}`, source: "run-contract", reason: "active run", priority: 95, tokenEstimate: Math.ceil(JSON.stringify(orchestration.activeRun.contract).length / 4) } : undefined,
@@ -298,6 +316,7 @@ export async function formatInjectPayload(harnessDir: string): Promise<ContextIn
     autoIngest,
     suggestedKnowledge,
     contextManifest,
+    impactSummary,
   );
 
   return {
@@ -317,6 +336,7 @@ export async function formatInjectPayload(harnessDir: string): Promise<ContextIn
     autoIngest,
     suggestedKnowledge,
     contextManifest,
+    impactSummary,
     text,
   };
 }

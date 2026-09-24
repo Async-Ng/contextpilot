@@ -17,6 +17,7 @@ import {
 import { runDiscover } from "./commands/discover";
 import { runDoctor } from "./commands/doctor";
 import { runDiagnoseDrift } from "./commands/diagnose-drift";
+import { runImpact } from "./commands/impact";
 import { runFocus } from "./commands/focus";
 import { runForget } from "./commands/forget";
 import {
@@ -123,6 +124,12 @@ program
   .action(async (opts: { all?: boolean }) => {
     await runDiagnoseDrift(opts);
   });
+
+program.command("impact").description("Analyze static JS/TS change impact")
+  .requiredOption("--file <path...>", "Changed file path(s)")
+  .option("--depth <n>", "Dependent depth", "2")
+  .option("--all", "Traverse all dependent depths", false)
+  .action((opts) => runImpact(opts));
 
 program
   .command("learn")

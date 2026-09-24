@@ -10,6 +10,7 @@ import {
   runVerification,
 } from "../core/orchestration";
 import { runContractSchema, type OrchestrationWorkflow } from "../core/orchestration-schema";
+import { analyzeImpact } from "../core/impact";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import {
@@ -110,10 +111,13 @@ export async function runOrchestrateStart(
       contract: readContract(path.dirname(harnessDir), options.contract),
     });
     const step = getActiveStep(run);
+    const changedFiles = run.scope.filter((entry) => /\.[jt]sx?$/.test(entry));
+    const impact = changedFiles.length ? analyzeImpact(harnessDir, changedFiles) : undefined;
     out(`Orchestration started: ${run.id}\nCurrent step: ${step?.title ?? "none"}`, {
       status: "started",
       run,
       activeStep: step,
+      impact,
     });
     process.exit(EXIT_OK);
   } catch (err) {

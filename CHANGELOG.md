@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.0 - JavaScript/TypeScript impact analysis
+
+- Added read-only `contextpilot impact --file <path...>` with direct/transitive dependents,
+  related tests, scoped knowledge/decisions, risk, and suggested orchestration scope.
+- Added in-process graph fingerprint caching for static JS/TS/JSX/TSX relative imports, including
+  extension and barrel-index resolution. Dynamic/runtime relationships remain explicitly unknown.
+- `orchestrate start` includes an impact report when given concrete JS/TS file paths.
+
 ## 0.7.0 - Read-only generated reconciliation
 
 - Added one read-only generated-artifact reconciliation path for status, doctor, and drift diagnosis.

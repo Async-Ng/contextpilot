@@ -225,6 +225,7 @@ Most of these are meant to be run **by the agent**, not by you — after `setup`
 | `setup` | Human, once | One-time project setup |
 | `doctor` | Human / CI | Verify installation, hooks, and generated files |
 | `status` | Agent | Drift, pending rules, open decisions, orchestration state (`--fast` for lightweight mode) |
+| `impact --file <path...>` | Agent | Read-only static JS/TS blast-radius report (dependents, tests, knowledge, and suggested scope) |
 | `context --inject` / `context explain` | Agent | Session context and the inclusion/budget manifest |
 | `learn` | Agent | Record a mistake/constraint learned this session |
 | `sync` | Agent | Regenerate every agent's instruction files (`--preview` to inspect first) |
@@ -243,6 +244,12 @@ Most of these are meant to be run **by the agent**, not by you — after `setup`
 
 Run `contextpilot <command> --help` for flags, or add `--json` to any command for machine-readable
 output.
+
+`impact` supports static relative `import`/`export` and `require` edges in `.js`, `.jsx`, `.ts`,
+and `.tsx` files. Use `--depth <n>` (default `2`) or `--all` for every dependent. Dynamic imports,
+string-based resolution, runtime DI, and external APIs are reported as unknown rather than being
+treated as safe. The command never edits product files; when an active run is present it only
+suggests scope additions for impacted files outside that run.
 
 ## Configuration
 
