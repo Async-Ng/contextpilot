@@ -65,6 +65,7 @@ program
   .description("Pilot AI coding agents with project context, memory, orchestration, and gates")
   .option("--json", "Output machine-readable JSON", false)
   .option("--no-input", "Disable interactive prompts (headless mode)", false)
+  .version(require("../package.json").version, "-V, --version", "Output the ContextPilot version")
   .hook("preAction", (thisCommand) => {
     const opts = thisCommand.opts<{ json?: boolean; input?: boolean }>();
     setGlobalOptions({
@@ -118,8 +119,9 @@ program
 program
   .command("diagnose-drift")
   .description("Explain generated artifact drift and the sync action without writing")
-  .action(async () => {
-    await runDiagnoseDrift();
+  .option("--all", "Include artifacts already in sync", false)
+  .action(async (opts: { all?: boolean }) => {
+    await runDiagnoseDrift(opts);
   });
 
 program
@@ -149,7 +151,8 @@ program
   .command("status")
   .description("Report drift, missing, external, pending, and open discussions")
   .option("--fast", "Return a lightweight, reliable status summary", false)
-  .action(async (opts: { fast?: boolean }) => {
+  .option("--all-artifacts", "Include generated artifacts already in sync", false)
+  .action(async (opts: { fast?: boolean; allArtifacts?: boolean }) => {
     await runStatus(opts);
   });
 

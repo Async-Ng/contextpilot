@@ -52,10 +52,15 @@ export interface GeneratedArtifactStatus {
   path: string;
   state: "in_sync" | "missing" | "content_drift" | "metadata_stale";
   action: "none" | "regenerate" | "refresh_metadata";
+  recordedHash?: string;
+  actualHash?: string;
+  expectedHash?: string;
 }
 
 export interface StatusReport {
   health: "healthy" | "degraded";
+  overallHealth: "healthy" | "degraded";
+  artifactHealth: "healthy" | "degraded";
   generatedArtifacts: GeneratedArtifactStatus[];
   mode: StatusMode;
   drift: Array<{ path: string; expectedHash: string; actualHash: string }>;
@@ -93,6 +98,8 @@ function getLinkedRuleIds(state: HarnessState): Set<string> {
 function buildEmptyReport(mode: StatusMode, projectRoot: string): StatusReport {
   return {
     health: "healthy",
+    overallHealth: "healthy",
+    artifactHealth: "healthy",
     generatedArtifacts: [],
     mode,
     drift: [],

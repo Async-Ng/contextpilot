@@ -203,12 +203,13 @@ contextpilot status --fast
 contextpilot sync --preview
 ```
 
-- `status --fast` skips expensive scans but still verifies generated artifacts and reports a
-  `healthy` or `degraded` health state.
+- `status --fast` skips expensive scans, verifies generated artifacts without a state lock, and
+  reports `overallHealth` plus `artifactHealth`. Use `--all-artifacts` for the full artifact list.
 - `sync --preview` shows content rewrites and baseline-hash refreshes without rewriting files or
   state, and reports generated-size deltas. Generated artifacts are ContextPilot-owned output:
   a normal `sync` recreates missing/drifted files and refreshes stale metadata automatically.
-- `diagnose-drift --json` explains the planned action for every generated artifact without writing.
+- `diagnose-drift --json` explains only actions needed without writing; pass `--all` for every artifact.
+- `--version` (or `-V`) prints the installed ContextPilot version.
 - Small tasks such as CI fixes, dead-code deletion, renames, and docs typos should not start
   orchestration by default.
 - `orchestrate start` remains the structured workflow command for non-trivial tasks: multi-file

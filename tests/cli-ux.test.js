@@ -139,7 +139,7 @@ test("sync reconciles stale generated metadata without rewriting the artifact", 
     const synced = runJson(cwd, ["sync"]);
     assert.deepEqual(synced.json.metadataRefreshed, [path.join(cwd, artifact)]);
     assert.equal(runJson(cwd, ["status", "--fast"]).json.health, "healthy");
-    assert.equal(runJson(cwd, ["doctor"]).json.health, "healthy");
+    assert.equal(runJson(cwd, ["doctor"]).json.artifactHealth, "healthy");
   });
 });
 

@@ -38,6 +38,52 @@ export interface SyncResult {
   };
 }
 
+export type GeneratedArtifactState = "in_sync" | "missing" | "content_drift" | "metadata_stale";
+export interface GeneratedArtifactReconciliation {
+  path: string;
+  state: GeneratedArtifactState;
+  action: "none" | "regenerate" | "refresh_metadata";
+  recordedHash?: string;
+  actualHash?: string;
+  expectedHash: string;
+}
+
+/** Read-only generated-output plan. It deliberately does not acquire the state lock. */
+export function reconcileGeneratedArtifacts(
+  harnessDir: string,
+  target?: string,
+): GeneratedArtifactReconciliation[] {
+  const config = loadConfig(harnessDir);
+  const agents = target ? config.agents.filter((agent) => agent === target) : config.agents;
+  if (target && agents.length === 0) throw new Error(`Unknown or disabled target: ${target}`);
+  const projectRoot = path.dirname(harnessDir);
+  const rules = listRules(harnessDir);
+  const state = loadState(harnessDir);
+  const expected = new Map<string, string>();
+  const knowledgeRules = filterKnowledgeRulesForIndex(rules, agents, config.dedupeGlobal);
+  if (knowledgeRules.length > 0 && config.agentContext.knowledgeMode === "manifest" && agents.some((agent) => agent !== "cursor")) {
+    expected.set(resolveProjectPath(harnessDir, config.agentContext.knowledgeIndexFile), buildKnowledgeIndexContent(config, projectRoot, knowledgeRules));
+  }
+  for (const agent of agents) {
+    const output = config.targets[agent].output;
+    if (agent === "cursor") {
+      for (const [filename, content] of buildCursorFiles(config, harnessDir, rules)) expected.set(path.join(projectRoot, output, filename), content);
+    } else {
+      expected.set(path.join(projectRoot, output), buildSingleFileContent(config, harnessDir, agent, rules));
+    }
+  }
+  return [...expected].map(([outputPath, content]) => {
+    const key = toStatePathKey(harnessDir, outputPath);
+    const recordedHash = state.generated[key]?.hash;
+    const actualHash = sha256File(outputPath) ?? undefined;
+    const expectedHash = sha256(content);
+    const stateName: GeneratedArtifactState = !actualHash ? "missing"
+      : actualHash !== expectedHash ? "content_drift"
+      : recordedHash !== expectedHash ? "metadata_stale" : "in_sync";
+    return { path: outputPath, state: stateName, action: stateName === "in_sync" ? "none" : stateName === "metadata_stale" ? "refresh_metadata" : "regenerate", recordedHash, actualHash, expectedHash };
+  });
+}
+
 function protocolForConfig(config: HarnessConfig): string {
   return config.agentContext.protocolLevel === "stub"
     ? STUB_HARNESS_PROTOCOL

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.0 - Read-only generated reconciliation
+
+- Added one read-only generated-artifact reconciliation path for status, doctor, and drift diagnosis.
+- Added `overallHealth` and `artifactHealth`; `health` remains the overall-health alias.
+- Added `--version`, `diagnose-drift --all`, and `status --all-artifacts`; clean output is compact by default.
+
 ## 0.6.0 - Generated artifact reconciliation
 
 - Added shared generated-artifact health output to `status` and `doctor`, including `healthy` / `degraded` state.

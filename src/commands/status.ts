@@ -1,5 +1,4 @@
 import * as path from "node:path";
-import * as fs from "node:fs";
 import chalk from "chalk";
 import { EXIT_OK, out, requireHarness } from "../core/io";
 import {
@@ -10,10 +9,11 @@ import {
   type StatusReport,
 } from "../core/status-logic";
 import { autoIngestSrsDrift } from "../core/srs-auto";
-import { runSync } from "../core/sync";
+import { reconcileGeneratedArtifacts } from "../core/sync";
 
 export interface StatusCommandOptions {
   fast?: boolean;
+  allArtifacts?: boolean;
 }
 
 function formatDiagnostics(report: StatusReport): string[] {
@@ -37,29 +37,21 @@ export async function runStatus(options: StatusCommandOptions = {}): Promise<voi
   const harnessDir = requireHarness();
   const autoIngest = await autoIngestSrsDrift(harnessDir);
   const report = computeStatus(harnessDir, { fast: options.fast });
-  const reconciliation = await runSync(harnessDir, { dryRun: true, allowDriftOverwrite: true });
-  const actionPaths = [...reconciliation.written, ...reconciliation.metadataRefreshed, ...reconciliation.unchanged];
-  report.generatedArtifacts = actionPaths.map((artifactPath) => {
-    const state = reconciliation.written.includes(artifactPath)
-      ? (fs.existsSync(artifactPath) ? "content_drift" : "missing")
-      : reconciliation.metadataRefreshed.includes(artifactPath) ? "metadata_stale" : "in_sync";
-    return {
-      path: artifactPath,
-      state,
-      action: state === "in_sync" ? "none" : state === "metadata_stale" ? "refresh_metadata" : "regenerate",
-    };
-  });
+  const reconciliation = reconcileGeneratedArtifacts(harnessDir);
+  report.generatedArtifacts = (options.allArtifacts ? reconciliation : reconciliation.filter((item) => item.state !== "in_sync"));
   report.drift = report.generatedArtifacts.filter((item) => item.state === "content_drift").map((item) => ({
     path: item.path,
-    expectedHash: reconciliation.expectedHashes[item.path] ?? "",
-    actualHash: "",
+    expectedHash: item.expectedHash ?? "",
+    actualHash: item.actualHash ?? "",
   }));
   report.missing = report.generatedArtifacts.filter((item) => item.state === "missing").map((item) => item.path);
   report.generated.missingCount = report.missing.length;
-  report.generated.driftCount = report.generatedArtifacts.filter((item) => item.state !== "in_sync").length;
-  report.health = report.generated.driftCount > 0 ? "degraded" : "healthy";
+  report.generated.driftCount = reconciliation.filter((item) => item.state !== "in_sync").length;
+  report.artifactHealth = report.generated.driftCount > 0 ? "degraded" : "healthy";
   const projectRoot = path.dirname(harnessDir);
   const hasIssues = hasStatusIssues(report);
+  report.overallHealth = hasIssues ? "degraded" : "healthy";
+  report.health = report.overallHealth;
 
   const lines: string[] = [chalk.bold("ContextPilot status:")];
   lines.push(report.health === "healthy" ? chalk.green("Health: healthy") : chalk.yellow("Health: degraded"));
