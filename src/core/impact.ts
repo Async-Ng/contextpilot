@@ -8,7 +8,7 @@ import { getRuntimeDir } from "./runtime";
 import { writeAtomic } from "./io";
 
 const EXTENSIONS = [".ts", ".tsx", ".js", ".jsx"];
-const IMPORT = /(?:import|export)\s+(?:[\s\S]*?\s+from\s+)?["']([^"']+)["']|require\(\s*["']([^"']+)["']\s*\)/g;
+const IMPORT = /\b(?:import|export)\s+(?:[^"']*?\s+from\s+)?["']([^"']+)["']|\brequire\(\s*["']([^"']+)["']\s*\)/g;
 const isTest = (file: string) => /(?:\.test|\.spec)\.[jt]sx?$|(?:^|\/)__tests__\//.test(file);
 const normalize = (root: string, file: string) => path.relative(root, file).replace(/\\/g, "/");
 
@@ -24,7 +24,7 @@ function resolveImport(from: string, specifier: string): string | undefined {
 
 function graphFor(harnessDir: string, root: string): CachedGraph {
   const files = fg.sync(["**/*.{ts,tsx,js,jsx}"], {
-    cwd: root, ignore: ["node_modules/**", "dist/**", "build/**", ".contextpilot/**"],
+    cwd: root, ignore: ["**/node_modules/**", "**/dist/**", "**/build/**", ".contextpilot/**"],
   }).map((file) => path.join(root, file));
   const fingerprint = files.map((file) => {
     const stat = fs.statSync(file);

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.1 - Impact scan performance
+
+- Made static import/export matching linear so first-run impact scans remain usable on large projects.
+
 ## 0.8.0 - JavaScript/TypeScript impact analysis
 
 - Added read-only `contextpilot impact --file <path...>` with direct/transitive dependents,
