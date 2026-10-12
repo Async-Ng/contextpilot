@@ -57,9 +57,15 @@ import { runStatus } from "./commands/status";
 import { runSyncCommand } from "./commands/sync";
 import { runWatch } from "./commands/watch";
 import { setGlobalOptions } from "./core/globals";
-import { exitMissingFlag } from "./core/io";
+import { commandExample, exitMissingFlag } from "./core/io";
 
 const program = new Command();
+program.configureOutput({ outputError: (message) => {
+  process.stderr.write(`${message}Example: ${commandExample()}\n`);
+} });
+program.on("command:*", () => {
+  console.error(`Example: ${commandExample()}`);
+});
 
 program
   .name("contextpilot")
@@ -113,7 +119,8 @@ program
   .option("--target <agent>", "Sync only one agent target")
   .option("--dry-run", "Preview without writing", false)
   .option("--preview", "Alias for --dry-run with preview-focused output", false)
-  .action(async (opts: { target?: string; dryRun?: boolean; preview?: boolean }) => {
+  .option("--timeout <seconds>", "Hard timeout in seconds (default: 120)")
+  .action(async (opts: { target?: string; dryRun?: boolean; preview?: boolean; timeout?: string }) => {
     await runSyncCommand(opts);
   });
 
@@ -400,8 +407,9 @@ orchestrate
   .command("verify")
   .description("Run the active contract verification commands and record evidence")
   .option("--expected-revision <n>", "Reject if the run revision changed")
-  .action(async (opts: { expectedRevision?: string }) => {
-    await runOrchestrateVerify({ expectedRevision: opts.expectedRevision === undefined ? undefined : Number(opts.expectedRevision) });
+  .option("--timeout <seconds>", "Hard timeout in seconds (default: 120)")
+  .action(async (opts: { expectedRevision?: string; timeout?: string }) => {
+    await runOrchestrateVerify({ expectedRevision: opts.expectedRevision === undefined ? undefined : Number(opts.expectedRevision), timeout: opts.timeout });
   });
 
 orchestrate
@@ -502,6 +510,15 @@ srs
   .option("--path <dir>", "SRS directory override")
   .option("--reingest", "Auto-resolve learnings absent from new SRS", false)
   .action(async (opts: { path?: string; reingest?: boolean }) => {
+    await runSrsIngest(opts);
+  });
+
+program.command("ingest", { hidden: true })
+  .description("Alias for srs ingest")
+  .option("--path <dir>", "SRS directory override")
+  .option("--reingest", "Auto-resolve learnings absent from new SRS", false)
+  .action(async (opts: { path?: string; reingest?: boolean }) => {
+    process.stderr.write("`ingest` is an alias; use `contextpilot srs ingest`.\n");
     await runSrsIngest(opts);
   });
 

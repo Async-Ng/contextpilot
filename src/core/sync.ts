@@ -21,6 +21,7 @@ export interface SyncOptions {
   target?: string;
   dryRun?: boolean;
   allowDriftOverwrite?: boolean;
+  onLockAcquired?: () => void;
 }
 
 export interface SyncResult {
@@ -583,6 +584,7 @@ export async function runSync(
   }
 
   return withLock(statePath, () => {
+    options.onLockAcquired?.();
     const state = loadState(harnessDir);
     const written: string[] = [];
     const unchanged: string[] = [];

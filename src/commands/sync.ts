@@ -3,25 +3,27 @@
   out,
   requireHarness,
 } from "../core/io";
-import { runSync } from "../core/sync";
-import { autoIngestSrsDrift } from "../core/srs-auto";
+import { parseTimeout, runLongTask } from "../core/long-task";
+import { getGlobalOptions } from "../core/globals";
+import type { SyncResult } from "../core/sync";
+import type { AutoIngestSrsResult } from "../core/srs-auto";
 export interface SyncCommandOptions {
   target?: string;
   dryRun?: boolean;
   preview?: boolean;
+  timeout?: string;
 }
 
 export async function runSyncCommand(options: SyncCommandOptions): Promise<void> {
   const harnessDir = requireHarness();
   const preview = options.preview === true || options.dryRun === true;
-  const autoIngest = await autoIngestSrsDrift(harnessDir);
-  const result = await runSync(harnessDir, {
+  const { autoIngest, ...result } = await runLongTask<SyncResult & { autoIngest: AutoIngestSrsResult }>("sync", {
     target: options.target,
     dryRun: preview,
     allowDriftOverwrite: true,
-  });
+  }, parseTimeout(options.timeout));
 
-  out(
+  if (!getGlobalOptions().json) out(
     preview
       ? `Preview: ${result.written.length} file(s) would change, ${result.metadataRefreshed.length} baseline hash(es) would refresh, ${result.unchanged.length} already up to date. Size delta: ${result.sizeSummary.deltaBytes} bytes.`
       : `Synced ${result.written.length} file(s); refreshed ${result.metadataRefreshed.length} baseline hash(es); ${result.unchanged.length} unchanged.`,

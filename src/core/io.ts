@@ -14,6 +14,21 @@ export const EXIT_REQUIRES_HUMAN = 3;
 export const EXIT_DRIFT_UNRESOLVED = 4;
 export const CONTEXTPILOT_DIR = ".contextpilot";
 export const LEGACY_HARNESS_DIR = ".harness";
+export const COMMAND_EXAMPLES: Record<string, string> = {
+  sync: "contextpilot sync --timeout 120 --json",
+  ingest: "contextpilot srs ingest --path docs/srs --reingest --json",
+  "srs ingest": "contextpilot srs ingest --path docs/srs --reingest --json",
+  learn: 'contextpilot learn --category constraint --severity med --title "Title" --detail "Detail" --json',
+  "decision open": 'contextpilot decision open --question "Question" --scope "src/**" --json',
+  "orchestrate start": 'contextpilot orchestrate start --goal "Goal" --scope "src/**" --json',
+  "orchestrate advance": 'contextpilot orchestrate advance --status complete --note "Evidence" --json',
+  "orchestrate verify": "contextpilot orchestrate verify --timeout 120 --json",
+};
+
+export function commandExample(): string {
+  const args = process.argv.slice(2).filter((arg) => arg !== "--json" && !arg.startsWith("--"));
+  return COMMAND_EXAMPLES[args.slice(0, 2).join(" ")] ?? COMMAND_EXAMPLES[args[0] ?? ""] ?? "contextpilot --help";
+}
 
 export function isInteractive(): boolean {
   const opts = getGlobalOptions();
@@ -116,16 +131,18 @@ export function out(human: string, jsonObj: unknown): void {
 
 export function errOut(human: string, jsonObj: unknown): void {
   const opts = getGlobalOptions();
+  const example = commandExample();
   if (opts.json) {
-    console.error(JSON.stringify(jsonObj, null, 2));
+    console.error(JSON.stringify(typeof jsonObj === "object" && jsonObj !== null ? { ...jsonObj, example } : { error: jsonObj, example }, null, 2));
   } else {
-    console.error(chalk.red(human));
+    console.error(chalk.red(`${human}\nExample: ${example}`));
   }
 }
 
 export function exitMissingFlag(flag: string, hint: string): never {
-  const jsonObj = { error: "missing_flag" as const, flag, hint };
-  errOut(`Missing required flag ${flag}. ${hint}`, jsonObj);
+  const example = commandExample();
+  const jsonObj = { error: "missing_flag" as const, flag, hint, example };
+  errOut(`Missing required flag ${flag}. ${hint} Example: ${example}`, jsonObj);
   process.exit(EXIT_MISSING_FLAG);
 }
 

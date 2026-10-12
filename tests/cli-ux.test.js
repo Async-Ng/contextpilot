@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
+const lockfile = require("proper-lockfile");
 
 const ROOT = path.join(__dirname, "..");
 const CLI = path.join(ROOT, "dist", "index.js");
@@ -28,7 +29,9 @@ function runJson(cwd, args) {
   const text = result.stdout || result.stderr;
   return {
     code: result.status,
-    json: text.trim() ? JSON.parse(text) : undefined,
+    json: text.trim() ? (text.trimStart().startsWith('{"type":"start"')
+      ? JSON.parse(text.trim().split("\n").at(-1)).result
+      : JSON.parse(text)) : undefined,
     stdout: result.stdout,
     stderr: result.stderr,
   };
@@ -109,6 +112,36 @@ test("sync --preview reports unchanged files instead of rewriting them", () => {
     assert.equal(result.json.written.length, 0);
     assert.ok(result.json.unchanged.length > 0);
     assert.equal(typeof result.json.sizeSummary.deltaBytes, "number");
+  });
+});
+
+test("sync emits NDJSON and times out while a state lock is held", async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "contextpilot-timeout-"));
+  try {
+    runJson(cwd, ["setup", "--no-git"]);
+    const statePath = path.join(cwd, ".contextpilot", "state.json");
+    const release = await lockfile.lock(statePath, { realpath: false });
+    try {
+      const result = spawnSync("node", [CLI, "--json", "sync", "--timeout", "1"], { cwd, encoding: "utf8", timeout: 10000 });
+      const events = result.stdout.trim().split("\n").map(JSON.parse);
+      assert.equal(result.status, 1);
+      assert.equal(events[0].type, "start");
+      assert.equal(events.at(-1).type, "error");
+      assert.match(events.at(-1).message, /Timed out/);
+      assert.ok(fs.existsSync(events.at(-1).logPath));
+    } finally {
+      await release();
+    }
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("ingest alias points to the canonical command", () => {
+  withTempProject((cwd) => {
+    runJson(cwd, ["setup", "--no-git"]);
+    const result = spawnSync("node", [CLI, "--json", "ingest", "--path", "docs/srs"], { cwd, encoding: "utf8" });
+    assert.match(result.stderr, /contextpilot srs ingest/);
   });
 });
 

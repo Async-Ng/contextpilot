@@ -208,6 +208,10 @@ contextpilot sync --preview
 - `sync --preview` shows content rewrites and baseline-hash refreshes without rewriting files or
   state, and reports generated-size deltas. Generated artifacts are ContextPilot-owned output:
   a normal `sync` recreates missing/drifted files and refreshes stale metadata automatically.
+- `sync` and `orchestrate verify` time out after 120 seconds by default; use `--timeout <seconds>` for larger projects. Progress, PID, and the last step are saved under `.contextpilot/logs/`. Ctrl+C cancels the worker.
+- With `--json`, these two commands emit NDJSON events (`start`, `progress`, then `done` or `error`). Read `done.result` instead of parsing stdout as one JSON object.
+- `contextpilot ingest` is an alias for `contextpilot srs ingest` and prints the canonical spelling.
+- Scope checks run through supported agent hooks and `gate precommit`. Codex hooks are unavailable on Windows; the pre-commit hook is the enforcement point there.
 - `diagnose-drift --json` explains only actions needed without writing; pass `--all` for every artifact.
 - `--version` (or `-V`) prints the installed ContextPilot version.
 - Small tasks such as CI fixes, dead-code deletion, renames, and docs typos should not start

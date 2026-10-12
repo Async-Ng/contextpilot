@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.0 - Windows reliability and scoped workflows
+
+- Added a cancellable child process, configurable 120-second timeout, local progress log, and NDJSON events for `sync` and `orchestrate verify`. Their `--json` stdout now streams events; consumers must read the terminal `done.result` event.
+- Added an `ingest` alias, actionable CLI examples, module-aware knowledge ranking, and a lighter checkpoint default.
+- Retained scope checks in agent hooks and the Git pre-commit gate. Codex hooks remain unavailable on Windows, so pre-commit is the available enforcement point there.
+
 ## 0.8.1 - Impact scan performance
 
 - Made static import/export matching linear so first-run impact scans remain usable on large projects.

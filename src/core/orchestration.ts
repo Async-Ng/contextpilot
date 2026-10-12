@@ -610,7 +610,7 @@ export function getWorktreeMismatch(harnessDir: string, run: OrchestrationRun): 
   return undefined;
 }
 
-export async function runVerification(harnessDir: string, expectedRevision?: number): Promise<OrchestrationRun> {
+export async function runVerification(harnessDir: string, expectedRevision?: number, onCommand?: (command: string) => void): Promise<OrchestrationRun> {
   const statePath = orchestrationLockPath(harnessDir);
   return withLock(statePath, () => {
     const activeRunId = getRuntimeActiveRunId(harnessDir);
@@ -632,6 +632,7 @@ export async function runVerification(harnessDir: string, expectedRevision?: num
     const root = path.dirname(harnessDir);
     const diffDigest = getGitDiffDigest(harnessDir);
     const evidence: VerificationEvidence[] = run.contract.verificationCommands.map((command) => {
+      onCommand?.(command);
       const started = Date.now();
       const result = spawnSync(command, {
         cwd: root,

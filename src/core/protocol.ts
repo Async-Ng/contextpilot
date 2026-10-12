@@ -10,7 +10,7 @@ export const STANDARD_HARNESS_PROTOCOL = `## ContextPilot Protocol - invisible t
   "Open Decisions" sections in this file.
 - If ContextPilot is not initialized and the user asks you to work in this repo, run
   \`contextpilot setup --json\`, then continue. Do not ask the user to initialize it.
-- If the user asks for a coding task and there is no Active Orchestration, start one yourself:
+- If the user asks for multi-file/module work, business logic, a migration, or a risky refactor and there is no Active Orchestration, start one yourself:
   \`contextpilot orchestrate start --goal "<user request summary>" --scope "<best affected glob>" --json\`.
   Infer the narrowest useful scope from the repo; if unsure, use the smallest obvious project area
   and refine your plan before editing.
@@ -52,8 +52,7 @@ export const STANDARD_HARNESS_PROTOCOL = `## ContextPilot Protocol - invisible t
   finishing the task. \`status --json\` and \`context --inject\` list stale/never-ingested SRS
   files under "srsDrift" if you forget - treat any non-empty "srsDrift" as a required-before-done
   item, not an FYI.
-- At the end of a task or a logical checkpoint, run: \`contextpilot checkpoint --json\`
-  (or \`contextpilot sync --json\`). If you have an Active Orchestration run and its current step
+- At the end of a task or a logical checkpoint, run \`contextpilot checkpoint --minimal --json\` only when generated agent/context files may have changed, or when an active run needs its checkpoint step completed. If you have an Active Orchestration run and its current step
   is the final "checkpoint" step, running \`checkpoint\` also completes that step and the run
   automatically - you do not need a separate \`orchestrate advance\` call in that case. If the run
   is at an earlier step, \`checkpoint\` will not advance it and the output will say so; call

@@ -82,6 +82,7 @@ export function buildCommitStatus(harnessDir: string): CommitStatusReport {
       report.generatedContext.push(normalized);
     } else if (
       normalized.startsWith(".contextpilot/runtime/") ||
+      normalized.startsWith(".contextpilot/logs/") ||
       (isRuntimeExternalized(harnessDir) && (normalized === runtimeRel || normalized.startsWith(`${runtimeRel}/`)))
     ) {
       report.runtimeOnly.push(normalized);

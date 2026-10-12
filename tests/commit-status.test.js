@@ -30,7 +30,9 @@ function runJson(cwd, args) {
   const text = result.stdout || result.stderr;
   return {
     code: result.status,
-    json: text.trim() ? JSON.parse(text) : undefined,
+    json: text.trim() ? (text.trimStart().startsWith('{"type":"start"')
+      ? JSON.parse(text.trim().split("\n").at(-1)).result
+      : JSON.parse(text)) : undefined,
   };
 }
 

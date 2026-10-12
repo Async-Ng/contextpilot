@@ -24,7 +24,9 @@ function runJson(cwd, args) {
   const text = result.stdout || result.stderr;
   return {
     code: result.status,
-    json: text.trim() ? JSON.parse(text) : undefined,
+    json: text.trim() ? (text.trimStart().startsWith('{"type":"start"')
+      ? JSON.parse(text.trim().split("\n").at(-1)).result
+      : JSON.parse(text)) : undefined,
     stdout: result.stdout,
     stderr: result.stderr,
   };
@@ -53,6 +55,7 @@ test("setup on a fresh project creates harness storage and generated protocol", 
     assert.ok(fs.existsSync(path.join(cwd, ".contextpilot", "orchestration", "events.jsonl")));
     assert.ok(fs.existsSync(path.join(cwd, ".contextpilot", "runtime")));
     assert.match(fs.readFileSync(path.join(cwd, ".gitignore"), "utf8"), /\.contextpilot\/runtime\//);
+    assert.match(fs.readFileSync(path.join(cwd, ".gitignore"), "utf8"), /\.contextpilot\/logs\//);
     assert.equal(readState(cwd).srs.status, "missing");
     const config = JSON.parse(
       fs.readFileSync(path.join(cwd, ".contextpilot", "harness.config.json"), "utf8"),

@@ -29,7 +29,9 @@ function runJson(cwd, args, input) {
   const text = result.stdout || result.stderr;
   return {
     code: result.status,
-    json: text.trim() ? JSON.parse(text) : undefined,
+    json: text.trim() ? (text.trimStart().startsWith('{"type":"start"')
+      ? JSON.parse(text.trim().split("\n").at(-1)).result
+      : JSON.parse(text)) : undefined,
     stdout: result.stdout,
     stderr: result.stderr,
   };
@@ -289,6 +291,23 @@ test("orchestrate scope add expands scope and out-of-scope denial suggests comma
     assert.equal(result.code, 0);
     assert.deepEqual(result.json.addedScope, [".github/**"]);
     assert.deepEqual(result.json.nextScope, ["src/**", ".github/**"]);
+  });
+});
+
+test("precommit enforces active run scope and accepts an audited expansion", () => {
+  withProject((cwd) => {
+    execFileSync("git", ["init", "-q"], { cwd });
+    fs.mkdirSync(path.join(cwd, "api", "src", "schedules"), { recursive: true });
+    fs.writeFileSync(path.join(cwd, "api", "src", "schedules", "swap.ts"), "export {};\n");
+    execFileSync("git", ["add", "api/src/schedules/swap.ts"], { cwd });
+    runJson(cwd, ["orchestrate", "start", "--goal", "Schedule swap", "--scope", "docs/srs/**"]);
+    runJson(cwd, ["orchestrate", "advance", "--status", "complete", "--note", "plan"]);
+    const denied = spawnSync("node", [CLI, "gate", "precommit"], { cwd, encoding: "utf8" });
+    assert.equal(denied.status, 1);
+    assert.match(denied.stderr, /outside active orchestration scope/);
+    runJson(cwd, ["orchestrate", "scope", "add", "--scope", "api/src/schedules/**", "--reason", "Implementation requires API changes"]);
+    const allowed = spawnSync("node", [CLI, "gate", "precommit"], { cwd, encoding: "utf8" });
+    assert.equal(allowed.status, 0);
   });
 });
 

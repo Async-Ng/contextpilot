@@ -30,12 +30,12 @@ export async function runCheckpoint(options: CheckpointOptions = {}): Promise<vo
 
   try {
     let result;
-    if (options.minimal || options.noPersist) {
+    if (options.minimal !== false || options.noPersist) {
       const preview = await runSync(harnessDir, {
         allowDriftOverwrite: true,
         dryRun: true,
       });
-      if (options.noPersist || preview.written.length === 0) {
+      if (options.noPersist || (preview.written.length === 0 && preview.metadataRefreshed.length === 0)) {
         result = preview;
       } else {
         result = await runSync(harnessDir, { allowDriftOverwrite: true });

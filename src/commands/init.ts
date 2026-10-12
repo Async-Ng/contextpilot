@@ -205,6 +205,7 @@ export function scaffoldHarness(
   writeAtomic(eventsPath, "");
 
   ensureGitignoreEntry(cwd, ".contextpilot/runtime/");
+  ensureGitignoreEntry(cwd, ".contextpilot/logs/");
 
 
 

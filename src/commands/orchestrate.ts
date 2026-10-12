@@ -7,12 +7,14 @@ import {
   getOrchestrationSummary,
   reopenRun,
   startRun,
-  runVerification,
 } from "../core/orchestration";
 import { runContractSchema, type OrchestrationWorkflow } from "../core/orchestration-schema";
 import { analyzeImpact } from "../core/impact";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { parseTimeout, runLongTask } from "../core/long-task";
+import { getGlobalOptions } from "../core/globals";
+import type { OrchestrationRun } from "../core/orchestration-schema";
 import {
   EXIT_GENERAL,
   EXIT_OK,
@@ -57,7 +59,7 @@ export interface OrchestrateScopeAddOptions {
   expectedRevision?: number;
 }
 
-export interface OrchestrateVerifyOptions { expectedRevision?: number; }
+export interface OrchestrateVerifyOptions { expectedRevision?: number; timeout?: string; }
 
 function parseScope(scope: string): string[] {
   return scope.split(",").map((s) => s.trim()).filter(Boolean);
@@ -243,8 +245,8 @@ export async function runOrchestrateAdvance(
 export async function runOrchestrateVerify(options: OrchestrateVerifyOptions): Promise<void> {
   const harnessDir = requireHarness();
   try {
-    const run = await runVerification(harnessDir, options.expectedRevision);
-    out(`Verification recorded for ${run.id}.`, {
+    const { run } = await runLongTask<{ status: string; run: OrchestrationRun }>("verify", { expectedRevision: options.expectedRevision }, parseTimeout(options.timeout));
+    if (!getGlobalOptions().json) out(`Verification recorded for ${run.id}.`, {
       status: "verification_recorded",
       run,
       activeStep: getActiveStep(run),

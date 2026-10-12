@@ -191,8 +191,9 @@ function scoreScope(
   for (const file of files) {
     const rel = normalizeRelativePath(projectRoot, file);
     if (matchesGlob(rel, rule.scope)) {
-      score += 80;
-      reasons.push(`file:${rel}`);
+      const specific = rule.scope.some((scope) => scope !== "**/*" && matchesGlob(rel, [scope]));
+      score += specific ? 100 : 5;
+      reasons.push(`${specific ? "file" : "global"}:${rel}`);
     }
   }
 
@@ -204,6 +205,29 @@ function scoreScope(
   }
 
   return score;
+}
+
+function moduleScore(rule: Rule, files: string[], moduleMap: Record<string, string[]>, reasons: string[]): number {
+  if (!rule.module || files.length === 0) return 0;
+  const normalizedModule = rule.module.toLowerCase().replace(/[^a-z0-9]/g, "").replace(/s$/, "");
+  for (const file of files) {
+    const normalizedFile = file.replace(/\\/g, "/").toLowerCase();
+    const mapped = Object.entries(moduleMap).find(([, globs]) => matchesGlob(normalizedFile, globs));
+    if (mapped) {
+      const mappedModule = mapped[0].toLowerCase().replace(/[^a-z0-9]/g, "").replace(/s$/, "");
+      if (mappedModule === normalizedModule) {
+        reasons.push(`module-map:${mapped[0]}`);
+        return 150;
+      }
+      return -60;
+    }
+    const parts = normalizedFile.split("/").slice(0, -1).map((part) => part.replace(/[^a-z0-9]/g, "").replace(/s$/, ""));
+    if (parts.includes(normalizedModule)) {
+      reasons.push(`module-path:${rule.module}`);
+      return 90;
+    }
+  }
+  return 0;
 }
 
 function taskSectionBonus(rule: Rule, task: KnowledgeTask | undefined): number {
@@ -359,6 +383,7 @@ export function queryKnowledge(
       const reasons: string[] = [];
       const matchScore =
         scoreScope(rule, files, scopes, projectRoot, reasons) +
+        moduleScore(rule, files, config.srs.moduleMap, reasons) +
         scoreText(rule, options.query, reasons) +
         taskSectionBonus(rule, task);
       const hasCriteria =

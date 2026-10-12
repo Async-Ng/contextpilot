@@ -24,7 +24,9 @@ function runJson(cwd, args) {
   const text = result.stdout || result.stderr;
   return {
     code: result.status,
-    json: text.trim() ? JSON.parse(text) : undefined,
+    json: text.trim() ? (text.trimStart().startsWith('{"type":"start"')
+      ? JSON.parse(text.trim().split("\n").at(-1)).result
+      : JSON.parse(text)) : undefined,
     stdout: result.stdout,
     stderr: result.stderr,
   };
@@ -130,6 +132,21 @@ test("knowledge relevant ranks file-scope matches first", () => {
     assert.deepEqual(result.json.files, ["src/auth/login.ts"]);
     assert.equal(result.json.results[0].id, "srs-03-auth");
     assert.ok(result.json.results[0].reasons.includes("file:src/auth/login.ts"));
+  });
+});
+
+test("knowledge relevant prioritizes schedules for a schedule swap path", () => {
+  withTempProject((cwd) => {
+    setupKnowledgeProject(cwd);
+    for (const [id, moduleName] of [["srs-schedules", "schedules"], ["srs-ai-incident", "ai-incident"], ["srs-announcements", "announcements"]]) {
+      writeKnowledge(cwd, id, [
+        `id: ${id}`, `title: "${moduleName}"`, "type: knowledge", "priority: normal",
+        "section: '03'", `module: ${moduleName}`, "scope:", "  - '**/*'", "targets:", "  - codex",
+      ], `${moduleName} requirements`);
+    }
+    const result = runJson(cwd, ["knowledge", "relevant", "--file", "api/src/schedules/schedule-swap.ts", "--limit", "3"]);
+    assert.equal(result.json.results[0].id, "srs-schedules");
+    assert.ok(result.json.results[0].reasons.includes("module-path:schedules"));
   });
 });
 
