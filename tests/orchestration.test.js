@@ -391,18 +391,66 @@ test("precommit enforces active run scope and accepts an audited expansion", () 
   });
 });
 
-test("precommit gives unstaging guidance for runtime logs", () => {
+test("precommit removes staged runtime files and commits the product file", () => {
+  withProject((cwd) => {
+    execFileSync("git", ["init", "-q"], { cwd });
+    const log = ".contextpilot/logs/sync with space.jsonl";
+    const runtime = ".contextpilot/runtime/state.json";
+    const product = "api/src/subjects/subject.ts";
+    for (const file of [log, runtime, product]) {
+      fs.mkdirSync(path.dirname(path.join(cwd, file)), { recursive: true });
+      fs.writeFileSync(path.join(cwd, file), "{}\n");
+    }
+    execFileSync("git", ["add", "-f", log, runtime, product], { cwd });
+    runJson(cwd, ["orchestrate", "start", "--goal", "Edit subjects", "--scope", "api/src/subjects/**"]);
+    runJson(cwd, ["orchestrate", "advance", "--status", "complete", "--note", "plan"]);
+    const result = spawnSync("node", [CLI, "gate", "precommit"], { cwd, encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stderr, /removed runtime artifact/);
+    assert.equal(fs.existsSync(path.join(cwd, log)), true);
+    assert.equal(fs.existsSync(path.join(cwd, runtime)), true);
+    assert.equal(execFileSync("git", ["diff", "--cached", "--name-only"], { cwd, encoding: "utf8" }).trim(), product);
+    execFileSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-q", "-m", "product"], { cwd });
+    assert.equal(execFileSync("git", ["show", "--pretty=", "--name-only", "HEAD"], { cwd, encoding: "utf8" }).trim(), product);
+  });
+});
+
+test("precommit stops tracking an existing runtime log without deleting it", () => {
   withProject((cwd) => {
     execFileSync("git", ["init", "-q"], { cwd });
     const log = ".contextpilot/logs/sync-123.jsonl";
     fs.mkdirSync(path.join(cwd, ".contextpilot", "logs"), { recursive: true });
     fs.writeFileSync(path.join(cwd, log), "{}\n");
     execFileSync("git", ["add", "-f", log], { cwd });
-    runJson(cwd, ["orchestrate", "start", "--goal", "Edit subjects", "--scope", "api/src/subjects/**"]);
-    runJson(cwd, ["orchestrate", "advance", "--status", "complete", "--note", "plan"]);
+    execFileSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-q", "-m", "old log"], { cwd });
+    assert.equal(execFileSync("git", ["ls-files", "--", log], { cwd, encoding: "utf8" }).trim(), log);
+    fs.writeFileSync(path.join(cwd, log), '{"new":true}\n');
+    execFileSync("git", ["add", "-f", log], { cwd });
     const result = spawnSync("node", [CLI, "gate", "precommit"], { cwd, encoding: "utf8" });
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /git rm --cached -- "\.contextpilot\/logs\/sync-123\.jsonl"/);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(fs.existsSync(path.join(cwd, log)), true);
+    assert.equal(execFileSync("git", ["diff", "--cached", "--name-status"], { cwd, encoding: "utf8" }).trim(), `D\t${log}`);
+  });
+});
+
+test("precommit blocks when Git cannot remove a runtime file from the index", () => {
+  withProject((cwd) => {
+    execFileSync("git", ["init", "-q"], { cwd });
+    const log = ".contextpilot/logs/sync-123.jsonl";
+    fs.mkdirSync(path.join(cwd, ".contextpilot", "logs"), { recursive: true });
+    fs.writeFileSync(path.join(cwd, log), "{}\n");
+    execFileSync("git", ["add", "-f", log], { cwd });
+    const lock = path.join(cwd, ".git", "index.lock");
+    fs.writeFileSync(lock, "");
+    try {
+      const result = spawnSync("node", [CLI, "gate", "precommit"], { cwd, encoding: "utf8" });
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /could not remove runtime artifact/);
+      assert.equal(execFileSync("git", ["diff", "--cached", "--name-only"], { cwd, encoding: "utf8" }).trim(), log);
+      assert.equal(fs.existsSync(path.join(cwd, log)), true);
+    } finally {
+      fs.rmSync(lock, { force: true });
+    }
   });
 });
 

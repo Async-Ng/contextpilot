@@ -1,4 +1,4 @@
-﻿import { execSync } from "node:child_process";
+﻿import { execFileSync } from "node:child_process";
 import type { AgentName } from "../core/config";
 import { evaluate } from "../core/gate";
 import {
@@ -145,13 +145,12 @@ export function runGatePrecommit(): void {
 
   let stagedFiles: string[];
   try {
-    const output = execSync("git diff --cached --name-only", {
+    const output = execFileSync("git", ["diff", "--cached", "--name-only", "-z"], {
       encoding: "utf8",
       stdio: ["pipe", "pipe", "pipe"],
     });
     stagedFiles = output
-      .split("\n")
-      .map((line) => line.trim())
+      .split("\0")
       .filter(Boolean);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -164,12 +163,22 @@ export function runGatePrecommit(): void {
 
   for (const file of stagedFiles) {
     if (file.startsWith(".contextpilot/logs/") || file.startsWith(".contextpilot/runtime/")) {
-      errOut(`Commit blocked: "${file}" is a runtime artifact. Remove it from the commit with: git rm --cached -- "${file}"`, {
-        error: "runtime_artifact_staged",
-        file,
-        blocked: true,
-      });
-      process.exit(EXIT_GENERAL);
+      try {
+        execFileSync("git", ["rm", "-f", "--cached", "--ignore-unmatch", "--", file], {
+          stdio: ["pipe", "pipe", "pipe"],
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        errOut(`Commit blocked: could not remove runtime artifact "${file}" from Git index: ${message}`, {
+          error: "runtime_artifact_cleanup_failed",
+          file,
+          message,
+          blocked: true,
+        });
+        process.exit(EXIT_GENERAL);
+      }
+      process.stderr.write(`ContextPilot removed runtime artifact "${file}" from Git index; local file kept.\n`);
+      continue;
     }
     const result = evaluate(harnessDir, { file });
     if (result.decision === "deny") {

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.2 - Automatic runtime log cleanup
+
+- Pre-commit now removes staged ContextPilot logs and runtime files from the Git index automatically, while keeping local files and checking the remaining changes.
+
 ## 0.10.1 - Runtime log commit guidance
 
 - Pre-commit now identifies staged runtime logs and gives the command to remove them from the Git index instead of suggesting an orchestration scope expansion.
