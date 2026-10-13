@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.0 - Agent context and SRS ingest improvements
+
+- Improved context selection and summaries so agents receive more relevant project knowledge.
+- Preserved useful memory and protocol guidance in generated agent context.
+- Improved SRS ingest error reporting and gate behavior when project context is incomplete.
+
 ## 0.9.0 - Windows reliability and scoped workflows
 
 - Added a cancellable child process, configurable 120-second timeout, local progress log, and NDJSON events for `sync` and `orchestrate verify`. Their `--json` stdout now streams events; consumers must read the terminal `done.result` event.
