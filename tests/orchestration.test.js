@@ -391,6 +391,21 @@ test("precommit enforces active run scope and accepts an audited expansion", () 
   });
 });
 
+test("precommit gives unstaging guidance for runtime logs", () => {
+  withProject((cwd) => {
+    execFileSync("git", ["init", "-q"], { cwd });
+    const log = ".contextpilot/logs/sync-123.jsonl";
+    fs.mkdirSync(path.join(cwd, ".contextpilot", "logs"), { recursive: true });
+    fs.writeFileSync(path.join(cwd, log), "{}\n");
+    execFileSync("git", ["add", "-f", log], { cwd });
+    runJson(cwd, ["orchestrate", "start", "--goal", "Edit subjects", "--scope", "api/src/subjects/**"]);
+    runJson(cwd, ["orchestrate", "advance", "--status", "complete", "--note", "plan"]);
+    const result = spawnSync("node", [CLI, "gate", "precommit"], { cwd, encoding: "utf8" });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /git rm --cached -- "\.contextpilot\/logs\/sync-123\.jsonl"/);
+  });
+});
+
 function readRuns(cwd) {
   const runsFile = path.join(cwd, ".contextpilot", "orchestration", "runs.jsonl");
   return fs

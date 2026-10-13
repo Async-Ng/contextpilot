@@ -163,6 +163,14 @@ export function runGatePrecommit(): void {
   }
 
   for (const file of stagedFiles) {
+    if (file.startsWith(".contextpilot/logs/") || file.startsWith(".contextpilot/runtime/")) {
+      errOut(`Commit blocked: "${file}" is a runtime artifact. Remove it from the commit with: git rm --cached -- "${file}"`, {
+        error: "runtime_artifact_staged",
+        file,
+        blocked: true,
+      });
+      process.exit(EXIT_GENERAL);
+    }
     const result = evaluate(harnessDir, { file });
     if (result.decision === "deny") {
       errOut(`Commit blocked: ${result.reason}`, {

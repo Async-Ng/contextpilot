@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.1 - Runtime log commit guidance
+
+- Pre-commit now identifies staged runtime logs and gives the command to remove them from the Git index instead of suggesting an orchestration scope expansion.
+
 ## 0.10.0 - Agent context and SRS ingest improvements
 
 - Improved context selection and summaries so agents receive more relevant project knowledge.
