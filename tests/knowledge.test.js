@@ -308,7 +308,7 @@ test("knowledge results include readPolicy and deliveryHint", () => {
   });
 });
 
-test("knowledge show falls back to rule body when canonical hash drifts", () => {
+test("knowledge show reads drifted SRS source with a warning", () => {
   withTempProject((cwd) => {
     runJson(cwd, ["setup", "--no-git", "--agent", "codex"]);
     writeFile(
@@ -327,10 +327,10 @@ test("knowledge show falls back to rule body when canonical hash drifts", () => 
     const result = runJson(cwd, ["knowledge", "show", "srs-07-auth"]);
 
     assert.equal(result.code, 0);
-    assert.equal(result.json.resolvedFrom, "rule");
+    assert.equal(result.json.resolvedFrom, "canonical");
     assert.match(result.json.driftWarning, /Canonical source drift/);
-    assert.doesNotMatch(result.json.body, /DRIFTED_CANONICAL_BODY/);
-    assert.match(result.json.source, /\.contextpilot\/rules\/srs-07-auth\.md/);
+    assert.match(result.json.body, /DRIFTED_CANONICAL_BODY/);
+    assert.match(result.json.source, /docs\/srs\/07-business-rules\/module-auth\.md/);
   });
 });
 

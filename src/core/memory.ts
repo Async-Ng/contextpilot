@@ -47,7 +47,24 @@ export function readAllLearnings(harnessDir: string): Learning[] {
 }
 
 export function sortLearnings(learnings: Learning[]): Learning[] {
-  return [...learnings].sort((a, b) => {
+  const ids = new Map(learnings.flatMap((learning) =>
+    [learning.id, learning.sourceItemId, ...[...learning.title.matchAll(/\bCR-\d+\b/gi)].map((match) => match[0])]
+      .filter((id): id is string => Boolean(id))
+      .map((id) => [id.toUpperCase(), learning.id] as const),
+  ));
+  const superseded = new Set<string>();
+  for (const learning of learnings) {
+    const supersessions = `${learning.title} ${learning.detail}`.matchAll(
+      /\bsupersedes?\s+((?:CR-\d+|lrn_[A-Za-z0-9_-]+)(?:\s*(?:,|and|&)\s*(?:CR-\d+|lrn_[A-Za-z0-9_-]+))*)/gi,
+    );
+    for (const match of supersessions) {
+      for (const id of match[1]?.match(/CR-\d+|lrn_[A-Za-z0-9_-]+/gi) ?? []) {
+        const oldId = ids.get(id.toUpperCase());
+        if (oldId && oldId !== learning.id) superseded.add(oldId);
+      }
+    }
+  }
+  return learnings.filter((learning) => !superseded.has(learning.id)).sort((a, b) => {
     if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
     const sd = SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity];
     if (sd !== 0) return sd;

@@ -164,7 +164,7 @@ test("context inject suggests knowledge for orchestration scope", () => {
         "section: \"03\"",
         "module: refunds",
         "scope:",
-        "  - src/**",
+        "  - src/refunds/**",
         "targets:",
         "  - claude",
         "  - cursor",
@@ -182,7 +182,7 @@ test("context inject suggests knowledge for orchestration scope", () => {
       "--goal",
       "Add refunds",
       "--scope",
-      "src/**",
+      "src/refunds/**",
     ]);
     const result = runJson(cwd, ["context", "--inject"]);
 
@@ -191,6 +191,50 @@ test("context inject suggests knowledge for orchestration scope", () => {
     assert.equal(result.json.suggestedKnowledge[0].id, "srs-03-refunds");
     assert.match(result.json.text, /Suggested Knowledge/);
     assert.match(result.json.suggestedKnowledge[0].hint, /knowledge show/);
+  });
+});
+
+test("context inject omits weak cross-module suggestions", () => {
+  withProject((cwd) => {
+    const rulesDir = path.join(cwd, ".contextpilot", "rules");
+    fs.mkdirSync(rulesDir, { recursive: true });
+    for (const module of ["transfer", "ai-incident-insight"]) {
+      fs.writeFileSync(path.join(rulesDir, `srs-07-${module}.md`), [
+        "---", `id: srs-07-${module}`, `title: SRS 07 ${module}`,
+        "type: knowledge", "priority: high", 'section: "07"',
+        `module: ${module}`, "scope:", "  - src/**", "targets:", "  - claude", "---", "", "Unrelated rules",
+      ].join("\n"));
+    }
+    runJson(cwd, ["orchestrate", "start", "--goal", "Subjects UX", "--scope", "src/subjects/**"]);
+    const result = runJson(cwd, ["context", "--inject"]);
+    assert.equal(result.code, 0);
+    assert.deepEqual(result.json.suggestedKnowledge, []);
+  });
+});
+
+test("Claude session context does not repeat learnings from CLAUDE.md", () => {
+  withProject((cwd) => {
+    const learned = runJson(cwd, ["learn", "--category", "constraint", "--severity", "high", "--title", "Unique learning", "--detail", "Keep this once", "--scope", "src/**"]);
+    assert.equal(learned.code, 0);
+    runJson(cwd, ["sync"]);
+    assert.match(fs.readFileSync(path.join(cwd, "CLAUDE.md"), "utf8"), /Unique learning/);
+    const result = runJson(cwd, ["context", "--inject", "--agent", "claude"]);
+    assert.equal(result.code, 0);
+    assert.doesNotMatch(result.json.text, /Top Learnings|Unique learning/);
+    assert.equal(result.json.learnings.length, 1);
+  });
+});
+
+test("inactive run prompts evidence review without requiring an advance", () => {
+  withProject((cwd) => {
+    runJson(cwd, ["orchestrate", "start", "--goal", "Old lab exercises", "--scope", "src/lab-exercises/**", "--preset", "lightweight"]);
+    const eventsPath = path.join(cwd, ".contextpilot", "orchestration", "events.jsonl");
+    const events = fs.readFileSync(eventsPath, "utf8").trim().split("\n").map((line) => ({ ...JSON.parse(line), createdAt: "2024-01-01T00:00:00.000Z" }));
+    fs.writeFileSync(eventsPath, `${events.map((event) => JSON.stringify(event)).join("\n")}\n`);
+    const result = runJson(cwd, ["context", "--inject"]);
+    assert.equal(result.code, 0);
+    assert.match(result.json.text, /Check the goal and scope against recent commits and test evidence/);
+    assert.doesNotMatch(result.json.text, /Next required command|When this step is done, run/);
   });
 });
 
@@ -216,6 +260,42 @@ test("gate denies file edits during non-edit orchestration step", () => {
 
     assert.equal(result.status, 2);
     assert.match(result.stderr, /does not allow file edits/);
+  });
+});
+
+test("Claude plan files bypass project scope while other external files stay denied", () => {
+  withProject((cwd) => {
+    runJson(cwd, ["orchestrate", "start", "--goal", "Update subjects", "--scope", "src/subjects/**"]);
+    const plansDir = path.join(os.homedir(), ".claude", "plans");
+    const check = (file) => spawnSync("node", [CLI, "gate", "check", "--agent", "claude"], {
+      cwd,
+      input: JSON.stringify({ tool_input: { file_path: file } }),
+      encoding: "utf8",
+    });
+
+    const plan = path.join(plansDir, "updated-subjects.md");
+    assert.equal(check(plan).status, 0);
+    assert.equal(runJson(cwd, ["orchestrate", "advance", "--status", "complete", "--note", "plan reviewed"]).code, 0);
+    assert.equal(check(plan).status, 0);
+
+    for (const file of [
+      path.join(plansDir, "..", "other.md"),
+      path.join(os.homedir(), ".claude", "plans-extra", "other.md"),
+      path.join(plansDir, "other.txt"),
+      path.join(cwd, "..", "other.md"),
+    ]) {
+      const denied = check(file);
+      assert.equal(denied.status, 2, file);
+      assert.match(denied.stderr, /outside the project/);
+      assert.doesNotMatch(denied.stderr, /orchestrate scope add/);
+    }
+    const scoped = check(path.join(cwd, "src", "other.ts"));
+    assert.equal(scoped.status, 2);
+    assert.match(scoped.stderr, /outside active orchestration scope/);
+    assert.equal(check("src/subjects/../other.ts").status, 2);
+
+    const { evaluate } = require("../dist/core/gate");
+    assert.equal(evaluate(path.join(cwd, ".contextpilot"), { file: plan, agent: "cursor" }).decision, "deny");
   });
 });
 

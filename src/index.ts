@@ -433,9 +433,10 @@ const contextCommand = program
   .command("context")
   .description("Session context for agent hooks")
   .option("--inject", "Output focus, learnings, and open decisions for session start")
-  .action(async (opts: { inject?: boolean }) => {
+  .option("--agent <agent>", "Agent receiving the injected context")
+  .action(async (opts: { inject?: boolean; agent?: "claude" | "cursor" | "codex" }) => {
     if (opts.inject) {
-      await runContextInject();
+      await runContextInject({ agent: opts.agent });
       return;
     }
     exitMissingFlag("--inject", "Use `context --inject` for session hook output");

@@ -1,4 +1,6 @@
 ﻿import * as path from "node:path";
+import * as fs from "node:fs";
+import * as os from "node:os";
 import { defaultGateConfig, type HarnessConfig } from "./config";
 import { loadConfig } from "./config-io";
 import { listOpenDecisions, readAllDecisions } from "./decisions";
@@ -16,6 +18,7 @@ import { getSrsStatus } from "./srs-state";
 export interface GateInput {
   file?: string;
   command?: string;
+  agent?: string;
 }
 
 export interface GateResult {
@@ -25,11 +28,26 @@ export interface GateResult {
 
 function normalizeRelativePath(harnessDir: string, file: string): string {
   const projectRoot = path.dirname(harnessDir);
-  const normalized = file.replace(/\\/g, "/");
-  if (path.isAbsolute(file)) {
-    return path.relative(projectRoot, file).replace(/\\/g, "/");
-  }
-  return normalized;
+  return path.relative(projectRoot, path.resolve(projectRoot, file)).replace(/\\/g, "/");
+}
+
+function isWithin(parent: string, child: string): boolean {
+  const relative = path.relative(parent, child);
+  return relative !== "" && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+}
+
+function isClaudePlan(file: string): boolean {
+  if (!path.isAbsolute(file) || path.extname(file).toLowerCase() !== ".md") return false;
+  const plansDir = path.resolve(os.homedir(), ".claude", "plans");
+  const target = path.resolve(file);
+  if (!isWithin(plansDir, target)) return false;
+  if (!fs.existsSync(plansDir)) return true;
+
+  const realPlansDir = fs.realpathSync.native(plansDir);
+  let existing = target;
+  while (!fs.existsSync(existing)) existing = path.dirname(existing);
+  const realTarget = fs.realpathSync.native(existing);
+  return realTarget === realPlansDir || isWithin(realPlansDir, realTarget);
 }
 
 function globToRegExp(pattern: string): RegExp {
@@ -141,7 +159,18 @@ function evaluateFile(
   harnessDir: string,
   config: HarnessConfig,
   file: string,
+  agent?: string,
 ): GateResult {
+  if (agent === "claude" && isClaudePlan(file)) {
+    return { decision: "allow", reason: "" };
+  }
+
+  const projectRoot = path.dirname(harnessDir);
+  const absoluteFile = path.resolve(projectRoot, file);
+  if (!isWithin(projectRoot, absoluteFile)) {
+    return { decision: "deny", reason: `File "${file}" is outside the project. Only Claude Markdown plans under ~/.claude/plans/ are exempt from project scope.` };
+  }
+
   const relFile = normalizeRelativePath(harnessDir, file);
 
   if (
@@ -299,7 +328,7 @@ export function evaluate(harnessDir: string, input: GateInput): GateResult {
 
   try {
     if (input.file) {
-      return evaluateFile(harnessDir, config, input.file);
+      return evaluateFile(harnessDir, config, input.file, input.agent);
     }
     if (input.command) {
       return evaluateCommand(harnessDir, input.command);

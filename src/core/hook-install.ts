@@ -87,7 +87,7 @@ function withoutLegacyClaudeCommands(settings: ClaudeSettings): ClaudeSettings {
     cleaned[event] = groups
       .map((group) => ({
         ...group,
-        hooks: group.hooks.filter((hook) => !hook.command.includes("agent-harness")),
+        hooks: group.hooks.filter((hook) => !hook.command.includes("agent-harness") && !(event === "SessionStart" && /context --inject$/.test(hook.command))),
       }))
       .filter((group) => group.hooks.length > 0);
   }
@@ -219,7 +219,7 @@ function installClaudeHooks(
   const file = path.join(projectRoot, ".claude", "settings.json");
   const cli = resolveHarnessCommand(projectRoot);
   const gateCheck = `${cli} gate check --agent claude`;
-  const contextInject = `${cli} context --inject`;
+  const contextInject = `${cli} context --inject --agent claude`;
   const checkpoint = `${cli} checkpoint`;
 
   const incoming: ClaudeSettings = {

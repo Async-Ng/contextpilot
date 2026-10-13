@@ -47,6 +47,7 @@ export interface ContextInjectPayload {
 
 export interface ContextInjectOptions {
   harnessDir?: string;
+  agent?: AgentName;
 }
 
 function formatOpenDecisionsSection(decisions: Decision[]): string {
@@ -89,9 +90,11 @@ function formatOrchestrationSection(summary: OrchestrationSummary): string {
     "Role guidance:",
     step.instructions,
     "",
-    "Next required command when this step is done:",
-    '`contextpilot orchestrate advance --status complete --note "<evidence>" --json`',
   ];
+
+  if ((summary.staleHours ?? 0) <= 24) {
+    lines.push("When this step is done, run:", '`contextpilot orchestrate advance --status complete --note "<evidence>" --json`');
+  }
 
   if (run.status === "blocked" || step.status === "blocked") {
     lines.push("", "This orchestration step is blocked; resolve the blocker before continuing.");
@@ -100,7 +103,7 @@ function formatOrchestrationSection(summary: OrchestrationSummary): string {
   if ((summary.staleHours ?? 0) > 24) {
     lines.push(
       "",
-      `Warning: no activity on this run in ${Math.floor(summary.staleHours ?? 0)}h - it may be abandoned. Resume it or cancel with \`contextpilot orchestrate cancel\`.`,
+      `Run inactive for ${Math.floor(summary.staleHours ?? 0)}h. Check the goal and scope against recent commits and test evidence before advancing or cancelling. A new request outside this scope is independent of this run.`,
     );
   }
 
@@ -119,7 +122,7 @@ function formatSrsDriftSection(drift: SrsFileDrift[]): string {
   for (const d of drift) {
     lines.push(`- [${d.kind}] ${d.path}`);
   }
-  lines.push("", "Run `contextpilot srs ingest --reingest --json` before relying on SRS knowledge for these files.");
+  lines.push("", "Review the changed SRS sources before relying on ingested knowledge. Ingest will stop if a generated rule was hand-edited.");
   return lines.join("\n");
 }
 
@@ -139,7 +142,7 @@ function formatAutoIngestSection(autoIngest: AutoIngestSrsResult): string {
     "",
     `Status: ${autoIngest.status}`,
     `Reason: ${autoIngest.reason ?? "unknown"}`,
-    "Run `contextpilot srs ingest --reingest --json` after resolving the issue.",
+    "Resolve the listed rule conflicts before running `contextpilot srs ingest --reingest --json`.",
   ].join("\n");
 }
 
@@ -186,7 +189,7 @@ function resolveSuggestedKnowledge(
   const result = queryKnowledge(harnessDir, {
     scopes,
     task: "code",
-    limit: 3,
+    limit: 1000,
     groupByModule: true,
   });
   if (result.results.length === 0) {
@@ -202,7 +205,10 @@ function resolveSuggestedKnowledge(
     { knowledgeMode: config.agentContext.knowledgeMode },
   );
 
-  return result.results.map((r) => ({
+  return result.results.filter((r) =>
+    r.reasons.some((reason) => reason.startsWith("file:") || reason.startsWith("module-map:") || reason.startsWith("module-path:") || reason.startsWith("title:") || reason.startsWith("id:") || reason.startsWith("tag:")) ||
+    scopes.some((scope) => scope !== "**/*" && scope !== "src/**" && r.scope.includes(scope)),
+  ).slice(0, 2).map((r) => ({
     id: r.id,
     title: r.title,
     hint:
@@ -222,6 +228,7 @@ function formatInjectText(
   suggestedKnowledge: Array<{ id: string; title: string; hint: string }>,
   contextManifest: ContextInjectPayload["contextManifest"],
   impactSummary?: ContextInjectPayload["impactSummary"],
+  agent?: AgentName,
 ): string {
   const sections: string[] = ["# Harness Session Context", ""];
 
@@ -245,7 +252,7 @@ function formatInjectText(
   }
 
   const learningsText = formatLearningsSection(learnings, learnings.length);
-  if (learningsText) {
+  if (learningsText && agent !== "claude") {
     sections.push("## Top Learnings", "", learningsText, "");
   }
 
@@ -281,7 +288,7 @@ function formatInjectText(
  * Build session-inject payload for hooks (Cursor sessionStart, Claude SessionStart).
  * Read-only - no network or codebase scan.
  */
-export async function formatInjectPayload(harnessDir: string): Promise<ContextInjectPayload> {
+export async function formatInjectPayload(harnessDir: string, agent?: AgentName): Promise<ContextInjectPayload> {
   const autoIngest = await autoIngestSrsDrift(harnessDir);
   const config = loadConfig(harnessDir);
   const maxLearnings = Math.min(config.maxLearningsPerFile, INJECT_MAX_LEARNINGS);
@@ -317,6 +324,7 @@ export async function formatInjectPayload(harnessDir: string): Promise<ContextIn
     suggestedKnowledge,
     contextManifest,
     impactSummary,
+    agent,
   );
 
   return {
@@ -344,7 +352,7 @@ export async function formatInjectPayload(harnessDir: string): Promise<ContextIn
 /** CLI + hook entry: `context --inject [--json]`. */
 export async function runContextInject(options: ContextInjectOptions = {}): Promise<void> {
   const harnessDir = options.harnessDir ?? requireHarness();
-  const payload = await formatInjectPayload(harnessDir);
+  const payload = await formatInjectPayload(harnessDir, options.agent);
 
   const human = payload.text || "No harness context to inject.";
   out(human, {

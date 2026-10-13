@@ -3,7 +3,7 @@ import * as path from "node:path";
 import { loadConfig, resolveProjectPath } from "./config-io";
 import { sha256, slugify, warn, withLock } from "./io";
 import { appendLearning, autoResolveBySourceIds } from "./memory";
-import { defaultFrontmatter, writeRule } from "./rules";
+import { defaultFrontmatter, getRuleFileDrift, writeRule } from "./rules";
 import type { Priority, SrsKind } from "./rule-schema";
 import { getStateFilePath, loadState, saveState } from "./state";
 import { setSrsStateOnState } from "./srs-state";
@@ -184,6 +184,14 @@ export async function ingestSrs(
 
   return withLock(statePath, () => {
     const state = loadState(harnessDir);
+    const conflicts = getRuleFileDrift(harnessDir, state);
+    if (conflicts.length > 0) {
+      const rulePaths = conflicts.map((item) => item.path).join(", ");
+      const sourcePaths = files.map((file) =>
+        path.relative(projectRoot, file.fullPath).replace(/\\/g, "/"),
+      ).join(", ");
+      throw new Error(`SRS ingest stopped: hand-edited generated rules: ${rulePaths}. SRS sources: ${sourcePaths}. Resolve the rule conflicts before re-ingesting.`);
+    }
 
     for (const file of files) {
       const sectionNum = file.sectionNum;

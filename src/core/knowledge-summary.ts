@@ -18,14 +18,6 @@ function extractKeyIds(body: string, max = 5): string[] {
   return ids;
 }
 
-function normalizeExcerpt(text: string, maxChars: number): string {
-  const normalized = text.replace(/\s+/g, " ").trim();
-  if (normalized.length <= maxChars) {
-    return normalized;
-  }
-  return `${normalized.slice(0, Math.max(0, maxChars - 3)).trimEnd()}...`;
-}
-
 /**
  * Build a compact summary table for global SRS knowledge (sections 01-11, all files).
  * Used in Cursor _project.mdc and single-file agent targets instead of full inline prose.
@@ -56,18 +48,20 @@ export function buildGlobalKnowledgeSummary(
     );
   }
 
-  lines.push("");
-  for (const rule of globalRules.slice(0, 3)) {
-    const excerpt = normalizeExcerpt(rule.body, 120);
-    if (excerpt) {
-      lines.push(`- **${rule.id}**: ${excerpt}`);
+  const table = lines.join("\n");
+  if (table.length > maxChars) {
+    const header = lines.slice(0, 7);
+    if (header.join("\n").length > maxChars) return "";
+    const kept = [...header];
+    const notice = "More entries: use `knowledge show <id>`.";
+    for (const line of lines.slice(7)) {
+      if ([...kept, line, "", notice].join("\n").length > maxChars) break;
+      kept.push(line);
     }
+    return [...kept, "", notice].join("\n").length <= maxChars
+      ? [...kept, "", notice].join("\n")
+      : kept.join("\n");
   }
 
-  let content = lines.join("\n");
-  if (content.length > maxChars) {
-    content = `${content.slice(0, maxChars - 40).trimEnd()}\n\n...(truncated; use \`knowledge show <id>\`)\n`;
-  }
-
-  return content;
+  return table;
 }

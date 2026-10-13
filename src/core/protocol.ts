@@ -17,6 +17,9 @@ export const STANDARD_HARNESS_PROTOCOL = `## ContextPilot Protocol - invisible t
 - If "Active Orchestration" is present, follow the current step role/instructions and advance
   the workflow with \`contextpilot orchestrate advance --status complete --note "<evidence>" --json\`
   when the step is done. Do not edit files during non-edit orchestration steps.
+- If a new user request is outside an old run's scope, check recent commits and verification
+  evidence for the old goal. Advance or cancel that run as warranted before starting the new task;
+  do not treat the new request as a required step of the old run.
 - During a verify step, run \`contextpilot orchestrate verify --json\` when the run contract has
   verification commands; do not claim verification is complete without fresh evidence.
 - Treat the run worktree binding and permission envelope as authoritative. For a risky network or
@@ -66,6 +69,8 @@ export const STUB_HARNESS_PROTOCOL = `## ContextPilot Protocol - lightweight def
 - For small technical tasks (CI, dead code, rename, docs typo), do not start orchestration. Work normally, then run \`contextpilot sync --preview\` only if generated agent/context files may be affected.
 - Start orchestration only for non-trivial work: multi-file/module changes, business logic, migrations, risky refactors, or when the user asks for a structured workflow.
 - If there is Active Orchestration, follow its current step and advance it when the step is done.
+- For a new request outside an inactive run's scope, check the old goal against commits and tests,
+  then advance or cancel that run as warranted before starting the new task.
 - In a verify step, run \`contextpilot orchestrate verify --json\` to record contract evidence.
 - If there are Open Decisions, ask the user the product/business question before changing scoped code.
 - Agent files are index-first. Use \`contextpilot knowledge relevant --file "<path>" --task code --limit 2 --json\`, then \`contextpilot knowledge show <id>\` for at most 1-2 relevant items.

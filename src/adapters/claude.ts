@@ -54,7 +54,7 @@ export function runClaudeAdapter(harnessDir: string): void {
   const file = payload.tool_input?.file_path;
   const command = payload.tool_input?.command;
   const result = file
-    ? evaluate(harnessDir, { file })
+    ? evaluate(harnessDir, { file, agent: "claude" })
     : command
       ? evaluate(harnessDir, { command })
       : evaluate(harnessDir, {});

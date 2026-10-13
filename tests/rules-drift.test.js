@@ -45,7 +45,7 @@ function writeFile(cwd, relPath, content) {
   fs.writeFileSync(fullPath, content, "utf8");
 }
 
-test("srs ingest warns and status reports drift when a rule file was hand-edited", () => {
+test("srs ingest stops before overwriting a hand-edited rule", () => {
   withTempProject((cwd) => {
     runJson(cwd, ["setup", "--no-git"]);
     writeFile(
@@ -67,12 +67,14 @@ test("srs ingest warns and status reports drift when a rule file was hand-edited
     assert.equal(dirty.json.ruleDrift[0].kind, "stale");
 
     const reingest = runRaw(cwd, ["srs", "ingest", "--path", "docs/srs", "--reingest"]);
-    assert.equal(reingest.status, 0);
-    assert.match(reingest.stderr, /Overwriting hand-edited rule file/);
+    assert.notEqual(reingest.status, 0);
+    assert.match(reingest.stderr, /hand-edited generated rules/);
     assert.match(reingest.stderr, /srs-03-auth\.md/);
+    assert.match(reingest.stderr, /module-auth\.md/);
+    assert.match(fs.readFileSync(rulePath, "utf8"), /Hand-edited addition/);
 
     const afterReingest = runJson(cwd, ["status"]);
-    assert.deepEqual(afterReingest.json.ruleDrift, []);
+    assert.equal(afterReingest.json.ruleDrift.length, 1);
   });
 });
 

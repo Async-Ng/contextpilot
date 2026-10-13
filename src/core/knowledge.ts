@@ -475,8 +475,10 @@ export function getKnowledgeById(
         body = fs.readFileSync(canonicalPath, "utf8").trim();
         resolvedFrom = "canonical";
       } else {
+        body = fs.readFileSync(canonicalPath, "utf8").trim();
+        resolvedFrom = "canonical";
         const message =
-          `Canonical source drift for ${id}: ${rule.canonicalSource} hash does not match ingested SRS state; using rule body.`;
+          `Canonical source drift for ${id}: ${rule.canonicalSource} differs from ingested knowledge. Showing current SRS source; resolve conflicts before re-ingesting.`;
         warn(message);
         driftWarning = message;
       }
