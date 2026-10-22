@@ -263,6 +263,19 @@ test("gate denies file edits during non-edit orchestration step", () => {
   });
 });
 
+test("Claude gate allows malformed hook JSON with a warning", () => {
+  withProject((cwd) => {
+    const result = spawnSync("node", [CLI, "gate", "check", "--agent", "claude"], {
+      cwd,
+      input: "{invalid",
+      encoding: "utf8",
+    });
+
+    assert.equal(result.status, 0);
+    assert.match(result.stderr, /invalid Claude hook JSON; allowing action/);
+  });
+});
+
 test("Claude plan files bypass project scope while other external files stay denied", () => {
   withProject((cwd) => {
     runJson(cwd, ["orchestrate", "start", "--goal", "Update subjects", "--scope", "src/subjects/**"]);

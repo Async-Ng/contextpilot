@@ -47,8 +47,8 @@ export function runClaudeAdapter(harnessDir: string): void {
   try {
     payload = parsePayload(raw);
   } catch {
-    process.stderr.write("contextpilot gate: invalid Claude hook JSON\n");
-    process.exit(EXIT_DENY);
+    process.stderr.write("contextpilot gate: invalid Claude hook JSON; allowing action without gate check\n");
+    process.exit(EXIT_ALLOW);
   }
 
   const file = payload.tool_input?.file_path;

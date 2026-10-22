@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.3 - Claude hook JSON recovery
+
+- Malformed Claude hook input now logs a warning and allows the action instead of blocking every write or shell command in Cursor Agent. Valid gate denials still block.
+
 ## 0.10.2 - Automatic runtime log cleanup
 
 - Pre-commit now removes staged ContextPilot logs and runtime files from the Git index automatically, while keeping local files and checking the remaining changes.
